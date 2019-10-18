@@ -1,10 +1,10 @@
 # reloading
 A Python utility to reload a loop body from source on each iteration without
-loosing state
+losing state
 
 Useful for editing PyTorch code during training. This lets
 you e.g. add logging, print statistics or save the model without restarting the
-training and, therefore, without loosing the training progress.
+training and, therefore, without losing the training progress.
 
 ![Demo](https://github.com/julvo/reloading/blob/master/example/demo.gif)
 
