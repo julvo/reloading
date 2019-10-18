@@ -9,6 +9,7 @@ training and, therefore, without loosing the training progress.
 ![Demo](https://github.com/julvo/reloading/blob/master/example/demo.gif)
 
 ## Install
+Please make sure you're using Python 3, then install via pip:
 
 ```
 pip install reloading
