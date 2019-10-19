@@ -19,7 +19,7 @@ pip install reloading
 
 Simply wrap the iterator in a `for` loop with `reloading`, e.g.
 ```python
-import reloading from reloading
+from reloading import reloading
 
 for i in reloading(range(10)):
     # here could be your training loop
