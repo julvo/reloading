@@ -56,7 +56,7 @@ def reloading(seq):
     for j in seq:
         fpath = inspect.stack()[1][1]
         with open(fpath, 'r') as f:
-            src = f.read()
+            src = f.read() + '\n'
 
         # find the iteration variables in the caller module's source
         match = re.search('\s*for (.+?) in reloading', src)

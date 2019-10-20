@@ -31,7 +31,7 @@ class TestReloading(unittest.TestCase):
             # wait for first loop iterations to run before changing source file
             time.sleep(0.2)
             with open(SRC_FILE_NAME, 'w') as f:
-                f.write(SRC_FILE_CONTENT.replace('INITIAL', 'CHANGED'))
+                f.write(SRC_FILE_CONTENT.replace('INITIAL', 'CHANGED').rstrip('\n'))
 
             # check if output contains results from before and after change
             stdout = proc.stdout.read().decode('utf-8')
