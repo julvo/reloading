@@ -26,7 +26,7 @@ class TestReloading(unittest.TestCase):
         with open(SRC_FILE_NAME, 'w') as f:
             f.write(SRC_FILE_CONTENT)
 
-        cmd = ['python3', SRC_FILE_NAME]
+        cmd = ['python', SRC_FILE_NAME]
         with sp.Popen(cmd, stdout=sp.PIPE) as proc:
             # wait for first loop iterations to run before changing source file
             time.sleep(0.2)

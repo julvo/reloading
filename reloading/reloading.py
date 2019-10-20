@@ -84,9 +84,10 @@ def reloading(seq):
             exec(body)
         except Exception:
             exc = traceback.format_exc()
-            exc = exc.replace('File "<string>"', f'File "{fpath}"')
+            exc = exc.replace('File "<string>"', 'File "{}"'.format(fpath))
             sys.stderr.write(exc + '\n')
-            input('Edit the file and press return to continue with the next iteration')
+            print('Edit the file and press return to continue with the next iteration')
+            sys.stdin.readline()
 
     # copy locals back into the caller's locals
     for k, v in locals().items():
