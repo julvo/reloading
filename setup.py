@@ -3,13 +3,13 @@ from distutils.core import setup
 setup(
   name = 'reloading',         
   packages = ['reloading'],   
-  version = '0.1.0',      
+  version = '0.1.1',      
   license='MIT',        
   description = 'Reloads a loop body from source on each iteration without loosing state',
   author = 'Julian Vossen',
   author_email = 'pypi@julianvossen.de',
   url = 'https://github.com/julvo/reloading',
-  download_url = 'https://github.com/julvo/reloading/archive/v_0_1.tar.gz',
+  download_url = 'https://github.com/julvo/reloading/archive/v0.1.1.tar.gz',
   keywords = ['reload', 'reloading', 'refresh', 'loop'],
   install_requires=[],
   classifiers=[

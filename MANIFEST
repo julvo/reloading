@@ -3,3 +3,4 @@ setup.cfg
 setup.py
 reloading/__init__.py
 reloading/reloading.py
+reloading/test_reloading.py
