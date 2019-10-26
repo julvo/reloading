@@ -40,6 +40,33 @@ def locate_loop_body(module, loop):
     return min(starts), min(ends)
 
 
+def load_source(fpath):
+    with open(fpath, 'r') as f:
+        src = f.read() + '\n'
+
+    # find the iteration variables in the caller module's source
+    match = re.search('\s*for (.+?) in reloading', src)
+    if match is None:
+        return '' 
+    itervars = match.group(1)
+
+    # find the loop body in the caller module's source
+    tree = ast.parse(src)
+    loop = find_loop(tree)
+    s, end = locate_loop_body(tree, loop)
+    lines  = src.split('\n')
+    if end < 0:
+        end = len(lines)
+    body_lines = lines[s-1:end-1] # -1 as line numbers are 1-indexed
+
+    # remove indent from loop body
+    indent = re.search('([ \t]*)\S', body_lines[0])
+    body = '\n'.join([ line[len(indent.group(1)):] for line in body_lines ])
+
+    return itervars + ' = j \n' + body
+
+
+
 def reloading(seq):
     frame = inspect.currentframe()
 
@@ -54,38 +81,16 @@ def reloading(seq):
         exec('{} = caller_locals["{}"]'.format(k, k))
 
     for j in seq:
-        fpath = inspect.stack()[1][1]
-        with open(fpath, 'r') as f:
-            src = f.read() + '\n'
-
-        # find the iteration variables in the caller module's source
-        match = re.search('\s*for (.+?) in reloading', src)
-        if match is None:
-            break 
-        itervars = match.group(1)
-
-        # find the loop body in the caller module's source
-        tree = ast.parse(src)
-        loop = find_loop(tree)
-        s, end = locate_loop_body(tree, loop)
-        lines  = src.split('\n')
-        if end < 0:
-            end = len(lines)
-        body_lines = lines[s-1:end-1] # -1 as line numbers are 1-indexed
-
-        # remove indent from loop body
-        indent = re.search('([ \t]*)\S', body_lines[0])
-        body = '\n'.join([ line[len(indent.group(1)):] for line in body_lines ])
-
-        exec(itervars + ' = j')
-
         try:
-            # run main loop body
-            exec(body)
+            # load and run main loop body
+            exec(load_source(fpath=inspect.stack()[1][1]))
         except Exception:
-            exc = traceback.format_exc()
-            exc = exc.replace('File "<string>"', 'File "{}"'.format(fpath))
-            sys.stderr.write(exc + '\n')
+            # we avoid defining local variables as these would overwrite the
+            # user's variables
+            sys.stderr.write(
+                    traceback.format_exc()\
+                    .replace('File "<string>"',
+                             'File "{}"'.format(inspect.stack()[1][1])) + '\n')
             print('Edit the file and press return to continue with the next iteration')
             sys.stdin.readline()
 
