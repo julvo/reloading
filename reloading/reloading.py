@@ -4,6 +4,7 @@ import inspect
 import sys
 import ast
 import traceback
+from itertools import chain
 
 
 def find_loop(tree):
@@ -40,19 +41,16 @@ def locate_loop_body(module, loop):
     return min(starts), min(ends)
 
 
+def unique_name(used):
+    return max(used, key=len) + "0"
+
+
 def reloading(seq):
     frame = inspect.currentframe()
 
-    # copy caller's globals into this module's namespace
     caller_globals = frame.f_back.f_globals
-    for k, v in caller_globals.items():
-        globals()[k] = v
-
-    # copy caller's locals into this module's namespace
     caller_locals = frame.f_back.f_locals
-    for k, v in caller_locals.items():
-        exec('{} = caller_locals["{}"]'.format(k, k))
-
+    unique = unique_name(chain(caller_locals.keys(), caller_globals.keys()))
     for j in seq:
         fpath = inspect.stack()[1][1]
         with open(fpath, 'r') as f:
@@ -77,20 +75,17 @@ def reloading(seq):
         indent = re.search('([ \t]*)\S', body_lines[0])
         body = '\n'.join([ line[len(indent.group(1)):] for line in body_lines ])
 
-        exec(itervars + ' = j')
+        caller_locals[unique] = j
+        exec(itervars + ' = ' + unique, caller_globals, caller_locals)
 
         try:
             # run main loop body
-            exec(body)
+            exec(body, caller_globals, caller_locals)
         except Exception:
             exc = traceback.format_exc()
             exc = exc.replace('File "<string>"', 'File "{}"'.format(fpath))
             sys.stderr.write(exc + '\n')
             print('Edit the file and press return to continue with the next iteration')
             sys.stdin.readline()
-
-    # copy locals back into the caller's locals
-    for k, v in locals().items():
-        frame.f_back.f_locals[k] = v
 
     return []
