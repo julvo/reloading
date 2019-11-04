@@ -38,6 +38,11 @@ class TestReloading(unittest.TestCase):
             self.assertTrue('INITIAL_FILE_CONTENTS' in stdout and
                             'CHANGED_FILE_CONTENTS' in stdout)
 
+    def test_local_vars_are_not_overwritten(self):
+        fpath = "test"
+        for _ in reloading(range(1)):
+            self.assertEqual(fpath, "test")
+
     def tearDown(self):
         if os.path.isfile(SRC_FILE_NAME):
             os.remove(SRC_FILE_NAME)
