@@ -1,4 +1,6 @@
 # reloading
+![pypi badge](https://img.shields.io/pypi/v/reloading?color=%230c0)
+
 A Python utility to reload a loop body from source on each iteration without
 losing state
 
