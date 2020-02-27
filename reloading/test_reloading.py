@@ -7,13 +7,26 @@ from reloading import reloading
 
 SRC_FILE_NAME = 'temporary_testing_file.py'
 
-TEST_CHANGING_SOURCE_CONTENT = '''
+TEST_CHANGING_SOURCE_LOOP_CONTENT = '''
 from reloading import reloading
 from time import sleep
 
 for epoch in reloading(range(10)):
     sleep(0.1)
     print('INITIAL_FILE_CONTENTS')
+'''
+
+TEST_CHANGING_SOURCE_FN_CONTENT = '''
+from reloading import reloading
+from time import sleep
+
+@reloading
+def reload_this_fn():
+    print('INITIAL_FILE_CONTENTS')
+
+for epoch in reloading(range(10)):
+    sleep(0.1)
+    reload_this_fn()
 '''
 
 TEST_KEEP_LOCAL_VARIABLES_CONTENT = '''
@@ -74,10 +87,10 @@ class TestReloading(unittest.TestCase):
         for _ in reloading(range(10)):
             iters += 1
 
-    def test_changing_source(self):
+    def test_changing_source_loop(self):
         stdout, _ = run_and_update_source(
-          init_src=TEST_CHANGING_SOURCE_CONTENT,
-          updated_src=TEST_CHANGING_SOURCE_CONTENT.replace('INITIAL', 'CHANGED').rstrip('\n'))
+          init_src=TEST_CHANGING_SOURCE_LOOP_CONTENT,
+          updated_src=TEST_CHANGING_SOURCE_LOOP_CONTENT.replace('INITIAL', 'CHANGED').rstrip('\n'))
 
         self.assertTrue('INITIAL_FILE_CONTENTS' in stdout and
                         'CHANGED_FILE_CONTENTS' in stdout)
@@ -89,6 +102,22 @@ class TestReloading(unittest.TestCase):
     def test_persist_after_loop(self):
         _, has_error = run_and_update_source(init_src=TEST_PERSIST_AFTER_LOOP)
         self.assertFalse(has_error)
+
+    def test_simple_function(self):
+        @reloading
+        def some_func():
+            return 'result'
+        
+        self.assertTrue(some_func() == 'result')
+
+    def test_changing_source_function(self):
+        stdout, _ = run_and_update_source(
+          init_src=TEST_CHANGING_SOURCE_FN_CONTENT,
+          updated_src=TEST_CHANGING_SOURCE_FN_CONTENT.replace('INITIAL', 'CHANGED').rstrip('\n'))
+
+        self.assertTrue('INITIAL_FILE_CONTENTS' in stdout and
+                        'CHANGED_FILE_CONTENTS' in stdout)
+        pass
 
 
 if __name__ == '__main__':

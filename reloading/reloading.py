@@ -4,6 +4,7 @@ import inspect
 import sys
 import ast
 import traceback
+import types
 from itertools import chain
 
 
@@ -45,14 +46,20 @@ def unique_name(used):
     return max(used, key=len) + "0"
 
 
-def reloading(seq):
+def reloading(fn_or_seq):
+    if isinstance(fn_or_seq, types.FunctionType):
+        return _reloading_function(fn_or_seq)
+    return _reloading_loop(fn_or_seq)
+
+
+def _reloading_loop(seq):
     frame = inspect.currentframe()
 
-    caller_globals = frame.f_back.f_globals
-    caller_locals = frame.f_back.f_locals
+    caller_globals = frame.f_back.f_back.f_globals
+    caller_locals = frame.f_back.f_back.f_locals
     unique = unique_name(chain(caller_locals.keys(), caller_globals.keys()))
     for j in seq:
-        fpath = inspect.stack()[1][1]
+        fpath = inspect.stack()[2][1]
         with open(fpath, 'r') as f:
             src = f.read() + '\n'
 
@@ -89,3 +96,75 @@ def reloading(seq):
             sys.stdin.readline()
 
     return []
+
+
+def find_function_in_source(fn_name, src):
+    '''Finds line number of start and end of a function with a 
+    given name within the given source code.
+    '''
+    tree = ast.parse(src)
+
+    # find the parent of the function definition so that we can find out
+    # where the function definition ends by using the starting line
+    # number of the subsequent child after the function definition
+    for parent in ast.walk(tree):
+        fn_end = len(src.split('\n'))
+
+        for child in reversed(list(ast.iter_child_nodes(parent))):
+            if not isinstance(child, ast.FunctionDef)\
+               or child.name != fn_name\
+               or not hasattr(child, 'decorator_list')\
+               or len([ 
+                   dec 
+                   for dec in child.decorator_list 
+                   if dec.id == 'reloading' ]) < 1:
+
+                if hasattr(child, 'lineno'):
+                    fn_end = child.lineno - 1
+                continue
+
+            # if we arrived here, child is the function definition
+            fn_start = child.lineno
+            return fn_start, fn_end, child.col_offset
+
+    return -1, -1, 0
+
+
+def _reloading_function(fn):
+    frame, fpath = inspect.stack()[2][:2]
+    caller_locals = frame.f_locals
+    caller_globals = frame.f_globals
+
+    # if we are redefining the function, we need to load the file path
+    # from the function's dictionary as it would be `<string>` otherwise
+    # which happens when defining functions using `exec`
+    if fn.__name__ in caller_locals:
+        fpath = caller_locals[fn.__name__].__dict__['__fpath__']
+
+    def wrapped(*args, **kwargs):
+        with open(fpath, 'r') as f:
+            src = f.read()
+
+        start, end, indent = find_function_in_source(fn.__name__, src)
+        lines = src.split('\n')
+        fn_src = '\n'.join([ l[indent:] for l in lines[start-1:end] ])
+
+        # TODO catch errors
+        exec(fn_src, caller_globals, caller_locals)
+
+        # the newly defined function will also be decorated 
+        # with `reloading` and, hence, we call the inner function without
+        # triggering another reload (and another one...)
+        inner = caller_locals[fn.__name__].__dict__['__inner__']
+        return inner(*args, **kwargs)
+
+    # save the inner function to be able to call it without 
+    # triggering infinitely recursive reloading
+    wrapped.__dict__['__inner__'] = fn
+    # save the file path for later, as the original file path gets
+    # lost by reloading and redefining the function using `exec`
+    wrapped.__dict__['__fpath__'] = fpath
+    wrapped.__name__ = fn.__name__
+    wrapped.__doc__ = fn.__doc__
+
+    return wrapped
