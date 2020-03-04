@@ -26,7 +26,7 @@ def locate_loop_body(module, loop):
     starts = set()
 
     def visit(node):
-        if hasattr(node, 'lineno'):
+        if hasattr(node, 'lineno') and node.lineno > loop.lineno:
             starts.add(node.lineno)
             if node.lineno in ends:
                 ends.remove(node.lineno)
@@ -72,15 +72,18 @@ def _reloading_loop(seq):
         # find the loop body in the caller module's source
         tree = ast.parse(src)
         loop = find_loop(tree)
-        s, end = locate_loop_body(tree, loop)
+        start, end = locate_loop_body(tree, loop)
         lines  = src.split('\n')
         if end < 0:
             end = len(lines)
-        body_lines = lines[s-1:end-1] # -1 as line numbers are 1-indexed
+        body_lines = lines[start-1:end-1] # -1 as line numbers are 1-indexed
 
-        # remove indent from loop body
+        # remove indent from lines in loop body, only if a line
+        # starts with this indentation as comments might not
         indent = re.search('([ \t]*)\S', body_lines[0])
-        body = '\n'.join([ line[len(indent.group(1)):] for line in body_lines ])
+        body = '\n'.join([ line[len(indent.group(1)):] 
+            for line in body_lines 
+            if line.startswith(indent.group(1))])
 
         caller_locals[unique] = j
         exec(itervars + ' = ' + unique, caller_globals, caller_locals)
@@ -92,7 +95,7 @@ def _reloading_loop(seq):
             exc = traceback.format_exc()
             exc = exc.replace('File "<string>"', 'File "{}"'.format(fpath))
             sys.stderr.write(exc + '\n')
-            print('Edit the file and press return to continue with the next iteration')
+            print('Edit {} and press return to continue with the next iteration'.format(fpath))
             sys.stdin.readline()
 
     return []
