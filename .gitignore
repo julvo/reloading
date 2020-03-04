@@ -3,3 +3,4 @@ __pycache__
 *.pyc
 dist
 .DS_Store
+examples/FashionMNIST

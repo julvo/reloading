@@ -1,6 +1,6 @@
 import time
 import sys
-sys.path.append('..')
+sys.path.insert(0, '../..')
 from reloading import reloading
 
 epochs = 10000
@@ -12,4 +12,3 @@ for i in reloading(range(epochs)):
     loss /= 2
 
     print('Epoch:', i, 'Loss:', loss)
-
