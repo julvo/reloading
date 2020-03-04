@@ -7,6 +7,24 @@ import traceback
 import types
 from itertools import chain
 
+def reloading(fn_or_seq):
+    '''Wraps a loop iterator or decorates a function to reload source code.
+
+    A function that when wrapped around the outermost iterator in a for loop,
+    causes the loop body to reload from source before every iteration while
+    keeping the state.
+    When used as a function decorator, the function is reloaded from source 
+    before each execution.
+
+    Args:
+        fn_or_seq (function | iterable): A function or loop iterator which should
+            be reloaded from source before each execution or iteration,
+            respectively
+    '''
+    if isinstance(fn_or_seq, types.FunctionType):
+        return _reloading_function(fn_or_seq)
+    return _reloading_loop(fn_or_seq)
+
 
 def find_loop(tree):
     for child in ast.walk(tree):
@@ -44,12 +62,6 @@ def locate_loop_body(module, loop):
 
 def unique_name(used):
     return max(used, key=len) + "0"
-
-
-def reloading(fn_or_seq):
-    if isinstance(fn_or_seq, types.FunctionType):
-        return _reloading_function(fn_or_seq)
-    return _reloading_loop(fn_or_seq)
 
 
 def _reloading_loop(seq):
@@ -152,8 +164,17 @@ def _reloading_function(fn):
         lines = src.split('\n')
         fn_src = '\n'.join([ l[indent:] for l in lines[start-1:end] ])
 
-        # TODO catch errors
-        exec(fn_src, caller_globals, caller_locals)
+        while True:
+            try:
+                exec(fn_src, caller_globals, caller_locals)
+                break
+            except Exception:
+                exc = traceback.format_exc()
+                exc = exc.replace('File "<string>"', 'File "{}"'.format(fpath))
+                sys.stderr.write(exc + '\n')
+                print('Edit {} and press return to try again'.format(fpath))
+                sys.stdin.readline()
+
 
         # the newly defined function will also be decorated 
         # with `reloading` and, hence, we call the inner function without
