@@ -149,6 +149,8 @@ def _reloading_function(fn):
     frame, fpath = inspect.stack()[2][:2]
     caller_locals = frame.f_locals
     caller_globals = frame.f_globals
+    caller_locals_copy = caller_locals.copy()
+    caller_globals_copy = caller_globals.copy()
 
     # if we are redefining the function, we need to load the file path
     # from the function's dictionary as it would be `<string>` otherwise
@@ -166,7 +168,8 @@ def _reloading_function(fn):
 
         while True:
             try:
-                exec(fn_src, caller_globals, caller_locals)
+                exec(fn_src, caller_globals_copy, caller_locals_copy)
+                caller_locals[fn.__name__].__dict__['__inner__'] = caller_locals_copy[fn.__name__]
                 break
             except Exception:
                 exc = traceback.format_exc()
