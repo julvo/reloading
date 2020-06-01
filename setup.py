@@ -3,14 +3,14 @@ from distutils.core import setup
 setup(
   name = 'reloading',         
   packages = ['reloading'],   
-  version = '0.1.2',      
+  version = '1.0.1',      
   license='MIT',        
-  description = 'Reloads a loop body from source on each iteration without loosing state',
+  description = 'Reloads source code of a running program without losing state',
   author = 'Julian Vossen',
   author_email = 'pypi@julianvossen.de',
   url = 'https://github.com/julvo/reloading',
-  download_url = 'https://github.com/julvo/reloading/archive/v0.1.2.tar.gz',
-  keywords = ['reload', 'reloading', 'refresh', 'loop'],
+  download_url = 'https://github.com/julvo/reloading/archive/v1.0.1.tar.gz',
+  keywords = ['reload', 'reloading', 'refresh', 'loop', 'decorator'],
   install_requires=[],
   classifiers=[
     'Development Status :: 3 - Alpha',
@@ -22,5 +22,6 @@ setup(
     'Programming Language :: Python :: 3.5',
     'Programming Language :: Python :: 3.6',
     'Programming Language :: Python :: 3.7',
+    'Programming Language :: Python :: 3.8',
   ],
 )
