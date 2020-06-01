@@ -149,8 +149,6 @@ def _reloading_function(fn):
     frame, fpath = inspect.stack()[2][:2]
     caller_locals = frame.f_locals
     caller_globals = frame.f_globals
-    caller_locals_copy = caller_locals.copy()
-    caller_globals_copy = caller_globals.copy()
 
     # if we are redefining the function, we need to load the file path
     # from the function's dictionary as it would be `<string>` otherwise
@@ -159,6 +157,9 @@ def _reloading_function(fn):
         fpath = caller_locals[fn.__name__].__dict__['__fpath__']
 
     def wrapped(*args, **kwargs):
+        caller_locals_copy = caller_locals.copy()
+        caller_globals_copy = caller_globals.copy()
+
         with open(fpath, 'r') as f:
             src = f.read()
 
