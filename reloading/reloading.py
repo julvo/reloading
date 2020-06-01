@@ -7,6 +7,7 @@ import traceback
 import types
 from itertools import chain
 
+
 def reloading(fn_or_seq):
     '''Wraps a loop iterator or decorates a function to reload source code.
 
@@ -139,7 +140,7 @@ def find_function_in_source(fn_name, src):
                 continue
 
             # if we arrived here, child is the function definition
-            fn_start = child.lineno
+            fn_start = min([d.lineno for d in child.decorator_list])
             return fn_start, fn_end, child.col_offset
 
     return -1, -1, 0
