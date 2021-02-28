@@ -6,7 +6,7 @@ import ast
 import traceback
 import types
 from itertools import chain
-from functools import partial, update_wrapper
+from functools import partial, update_wrapper, wraps
 
 
 def reloading(*fn_or_seq, **kwargs):
@@ -163,6 +163,13 @@ def _reloading_loop(seq, reload_after=1):
     return []
 
 
+def ast_get_decorator_name(dec):
+    if hasattr(dec, "id"):
+        return dec.id
+    else:
+        return dec.func.id
+
+
 def find_function_in_source(fn_name, src):
     """Finds line number of start and end of a function with a
     given name within the given source code.
@@ -184,12 +191,11 @@ def find_function_in_source(fn_name, src):
                     [
                         dec
                         for dec in child.decorator_list
-                        if getattr(dec, "id", "") == "reloading"
-                        or getattr(dec.func, "id", "") == "reloading"
+                        if ast_get_decorator_name(dec) == "reloading"
                     ]
                 )
                 < 1
-            ): 
+            ):
                 # TODO: Awfull getattr workaround, needs fixing. in fact,
                 # this whole function could need some cleaning up.
                 if hasattr(child, "lineno"):
@@ -203,61 +209,56 @@ def find_function_in_source(fn_name, src):
     return -1, -1, 0
 
 
-def get_function_code(fpath, fn):
-    with open(fpath, "r") as f:
-        src = f.read()
+def ast_filter_decorator(func_module):
+    """Filter out the reloading decorator, inplace."""
+    func_module.body[0].decorator_list = [
+        dec
+        for dec in func_module.body[0].decorator_list
+        if ast_get_decorator_name(dec) != "reloading"
+    ]
+
+
+def get_function_def_code(fpath, fn):
+    src = ""
+    while src == "": # while loop here since while saving, the file may sometimes be empty.
+        with open(fpath, "r") as f:
+            src = f.read()
 
     start, end, indent = find_function_in_source(fn.__name__, src)
     lines = src.split("\n")
     fn_src = "\n".join([l[indent:] for l in lines[start - 1 : end]])
-    return fn_src
+    mod = ast.parse(fn_src)
+    ast_filter_decorator(mod)
+    # parse the function source as ast, to be able to easily filter out the reloading decorator.
+    # this avoids all the wierd things the previous version had to do, to prevent infinite reload recursion.
+    compiled = compile(mod, filename="", mode="exec")
+    return compiled
+
+def get_reloaded_function(caller_globals, caller_locals, fpath, fn):
+    code = get_function_def_code(fpath, fn)
+    # need to copy locals, otherwise the exec will overwrite the decorated with the undecorated new version
+    # this became a need after removing the reloading decorator from the newly defined version
+    caller_locals = caller_locals.copy()
+    exec(code, caller_globals, caller_locals)
+    func = caller_locals[fn.__name__]
+    # get the newly defined function from the caller_locals copy
+    return func
 
 
 def _reloading_function(fn, reload_after=1):
     frame, fpath = inspect.stack()[2][:2]
     caller_locals = frame.f_locals
     caller_globals = frame.f_globals
-
-    # if we are redefining the function, we need to load the file path
-    # from the function's dictionary as it would be `<string>` otherwise
-    # which happens when defining functions using `exec`
-    if fn.__name__ in caller_locals:
-        fpath = caller_locals[fn.__name__].__dict__["__fpath__"]
-    else:
-        # make sure both of these are initially set,
-        # using the function object to store without having to rely on a global
-        # basically, this is a global for this function
-        _reloading_function.fn_src = get_function_code(fpath, fn)
-        _reloading_function.counter = 0
+    counter = 0
+    the_func = get_reloaded_function(caller_globals, caller_locals, fpath, fn)
     def wrapped(*args, **kwargs):
-        while True:
-            try:
-                if _reloading_function.counter % reload_after == 0:
-                    # access the counter from the function variable, so its not reset each time its redefined
-                    _reloading_function.fn_src = get_function_code(fpath, fn)
-                _reloading_function.counter += 1
-
-                exec(_reloading_function.fn_src, caller_globals, caller_locals)
-                break
-            except Exception:
-                exc = traceback.format_exc()
-                exc = exc.replace('File "<string>"', 'File "{}"'.format(fpath))
-                sys.stderr.write(exc + "\n")
-                print("Edit {} and press return to try again".format(fpath))
-                sys.stdin.readline()
-
-        # the newly defined function will also be decorated
-        # with `reloading` and, hence, we call the inner function without
-        # triggering another reload (and another one...)
-        inner = caller_locals[fn.__name__].__dict__["__inner__"]
-        return inner(*args, **kwargs)
-
-    # save the inner function to be able to call it without
-    # triggering infinitely recursive reloading
-    wrapped.__dict__["__inner__"] = fn
-    # save the file path for later, as the original file path gets
-    # lost by reloading and redefining the function using `exec`
-    wrapped.__dict__["__fpath__"] = fpath
-    wrapped.__name__ = fn.__name__
-    wrapped.__doc__ = fn.__doc__
+        nonlocal counter
+        nonlocal the_func
+        if counter % reload_after == 0:
+            the_func = get_reloaded_function(caller_globals, caller_locals, fpath, fn)
+            print("reloaded")
+        counter += 1
+        a = the_func(*args, **kwargs)
+        return a
+    caller_locals[fn.__name__] = wrapped
     return wrapped
