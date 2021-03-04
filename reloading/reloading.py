@@ -101,13 +101,33 @@ def tuple_ast_as_name(tup):
     return ", ".join(names)
 
 
+def load_file(path):
+    src = ""
+    while (
+        src == ""
+    ):  # while loop here since while saving, the file may sometimes be empty.
+        with open(path, "r") as f:
+            src = f.read()
+    return src + "\n"
+
+
+def load_ast_parse(path):
+    source = load_file(path)
+    while True:
+        try:
+            tree = ast.parse(source)
+            break
+        except SyntaxError:
+            handle_exception(path)
+            source = load_file(path)
+    return tree
+
+
 def get_loop_code(loop_frame_info):
     fpath = loop_frame_info[1]
-    with open(fpath, "r") as f:
-        src = f.read() + "\n"
 
     # find the loop body in the caller module's source
-    tree = ast.parse(src)
+    tree = load_ast_parse(fpath)
     loop = find_loop(tree, lineno=loop_frame_info.lineno)
     start, end = locate_loop_body(tree, loop)
 
@@ -129,7 +149,15 @@ def get_loop_code(loop_frame_info):
             if line.startswith(indent.group(1))
         ]
     )
-    return compile(body, filename="", mode="exec"), itervars
+    return compile(body, filename="", mode="exec"), itervars, fpath
+
+
+def handle_exception(fpath):
+    exc = traceback.format_exc()
+    exc = exc.replace('File "<string>"', 'File "{}"'.format(fpath))
+    sys.stderr.write(exc + "\n")
+    print("Edit {} and press return to continue with the next iteration".format(fpath))
+    sys.stdin.readline()
 
 
 def _reloading_loop(seq, reload_after=1):
@@ -138,11 +166,11 @@ def _reloading_loop(seq, reload_after=1):
     caller_globals = loop_frame_info.frame.f_globals
     caller_locals = loop_frame_info.frame.f_locals
     unique = unique_name(chain(caller_locals.keys(), caller_globals.keys()))
-    compiled_body, itervars = get_loop_code(loop_frame_info)  # inital call
+    compiled_body, itervars, fpath = get_loop_code(loop_frame_info)  # inital call
     counter = 0
     for j in seq:
         if counter % reload_after == 0:
-            compiled_body, itervars = get_loop_code(loop_frame_info)
+            compiled_body, itervars, fpath = get_loop_code(loop_frame_info)
         counter += 1
         caller_locals[unique] = j
         exec(itervars + " = " + unique, caller_globals, caller_locals)
@@ -150,15 +178,7 @@ def _reloading_loop(seq, reload_after=1):
             # run main loop body
             exec(compiled_body, caller_globals, caller_locals)
         except Exception:
-            exc = traceback.format_exc()
-            exc = exc.replace('File "<string>"', 'File "{}"'.format(fpath))
-            sys.stderr.write(exc + "\n")
-            print(
-                "Edit {} and press return to continue with the next iteration".format(
-                    fpath
-                )
-            )
-            sys.stdin.readline()
+            handle_exception(fpath)
 
     return []
 
@@ -166,73 +186,43 @@ def _reloading_loop(seq, reload_after=1):
 def ast_get_decorator_name(dec):
     if hasattr(dec, "id"):
         return dec.id
-    else:
-        return dec.func.id
+    return dec.func.id
 
 
-def find_function_in_source(fn_name, src):
-    """Finds line number of start and end of a function with a
-    given name within the given source code.
-    """
-    tree = ast.parse(src)
-
-    # find the parent of the function definition so that we can find out
-    # where the function definition ends by using the starting line
-    # number of the subsequent child after the function definition
-    for parent in ast.walk(tree):
-        fn_end = len(src.split("\n"))
-
-        for child in reversed(list(ast.iter_child_nodes(parent))):
-            if (
-                not isinstance(child, ast.FunctionDef)
-                or child.name != fn_name
-                or not hasattr(child, "decorator_list")
-                or len(
-                    [
-                        dec
-                        for dec in child.decorator_list
-                        if ast_get_decorator_name(dec) == "reloading"
-                    ]
-                )
-                < 1
-            ):
-                # TODO: Awfull getattr workaround, needs fixing. in fact,
-                # this whole function could need some cleaning up.
-                if hasattr(child, "lineno"):
-                    fn_end = child.lineno - 1
-                continue
-
-            # if we arrived here, child is the function definition
-            fn_start = min([d.lineno for d in child.decorator_list])
-            return fn_start, fn_end, child.col_offset
-
-    return -1, -1, 0
-
-
-def ast_filter_decorator(func_module):
+def ast_filter_decorator(func):
     """Filter out the reloading decorator, inplace."""
-    func_module.body[0].decorator_list = [
+    func.decorator_list = [
         dec
-        for dec in func_module.body[0].decorator_list
+        for dec in func.decorator_list
         if ast_get_decorator_name(dec) != "reloading"
     ]
 
 
-def get_function_def_code(fpath, fn):
-    src = ""
-    while src == "": # while loop here since while saving, the file may sometimes be empty.
-        with open(fpath, "r") as f:
-            src = f.read()
+def isolate_func_ast(funcname, tree):
+    """ This removes everything but the function definition from the ast """
+    for child in ast.walk(tree):
+        if (
+            isinstance(child, ast.FunctionDef)
+            and child.name == funcname
+            and len(
+                [
+                    dec
+                    for dec in child.decorator_list
+                    if ast_get_decorator_name(dec) == "reloading"
+                ]
+            )
+            == 1
+        ):
+            ast_filter_decorator(child)
+            tree.body = [child] # reassign body, i would create a new ast if i knew how to create ast.Module objects
 
-    start, end, indent = find_function_in_source(fn.__name__, src)
-    lines = src.split("\n")
-    fn_src = "\n".join([l[indent:] for l in lines[start - 1 : end]])
-    mod = ast.parse(fn_src)
-    ast_filter_decorator(mod)
-    # parse the function source as ast, to be able to easily filter out the reloading decorator.
-    # this avoids all the wierd things the previous version had to do, to prevent infinite reload recursion.
-    compiled = compile(mod, filename="", mode="exec")
+def get_function_def_code(fpath, fn):
+    tree = load_ast_parse(fpath)
+    # these both work inplace and modify the ast
+    isolate_func_ast(fn.__name__, tree)
+    compiled = compile(tree, filename="", mode="exec")
     return compiled
+
 
 def get_reloaded_function(caller_globals, caller_locals, fpath, fn):
     code = get_function_def_code(fpath, fn)
@@ -251,14 +241,23 @@ def _reloading_function(fn, reload_after=1):
     caller_globals = frame.f_globals
     counter = 0
     the_func = get_reloaded_function(caller_globals, caller_locals, fpath, fn)
+
     def wrapped(*args, **kwargs):
         nonlocal counter
         nonlocal the_func
         if counter % reload_after == 0:
             the_func = get_reloaded_function(caller_globals, caller_locals, fpath, fn)
-            print("reloaded")
         counter += 1
-        a = the_func(*args, **kwargs)
+        while True:
+            try:
+                a = the_func(*args, **kwargs)
+                break
+            except Exception:
+                handle_exception(fpath)
+                the_func = get_reloaded_function(
+                    caller_globals, caller_locals, fpath, fn
+                )
         return a
+
     caller_locals[fn.__name__] = wrapped
     return wrapped
