@@ -131,6 +131,10 @@ def get_loop_code(loop_frame_info):
     loop = find_loop(tree, lineno=loop_frame_info.lineno)
     start, end = locate_loop_body(tree, loop)
 
+    # i hate loading the file twice, but for now im leaving this as a todo
+    # TODO: rwrite function reloading to be ast only 
+    src = load_file(fpath)
+    
     lines = src.split("\n")
     if end < 0:
         end = len(lines)
