@@ -123,37 +123,23 @@ def load_ast_parse(path):
     return tree
 
 
+def isolate_loop_ast(tree, lineno=None):
+    """strip ast from anything but the loop body, also returning the loop vars"""
+    for child in ast.walk(tree):
+        # i hope this is enough checks
+        if getattr(child, "lineno", None) == lineno and child.iter.func.id == "reloading":
+            itervars = tuple_ast_as_name(child.target)
+            # replace the original body with the loop body
+            tree.body = child.body
+            return itervars
+
 def get_loop_code(loop_frame_info):
     fpath = loop_frame_info[1]
-
     # find the loop body in the caller module's source
     tree = load_ast_parse(fpath)
-    loop = find_loop(tree, lineno=loop_frame_info.lineno)
-    start, end = locate_loop_body(tree, loop)
-
-    # i hate loading the file twice, but for now im leaving this as a todo
-    # TODO: rwrite function reloading to be ast only 
-    src = load_file(fpath)
-    
-    lines = src.split("\n")
-    if end < 0:
-        end = len(lines)
-    body_lines = lines[start - 1 : end - 1]  # -1 as line numbers are 1-indexed
-
-    # find the iteration variables from the loop target ast
-    itervars = tuple_ast_as_name(loop.target)
-
-    # remove indent from lines in loop body, only if a line
-    # starts with this indentation as comments might not
-    indent = re.search("([ \t]*)\S", body_lines[0])
-    body = "\n".join(
-        [
-            line[len(indent.group(1)) :]
-            for line in body_lines
-            if line.startswith(indent.group(1))
-        ]
-    )
-    return compile(body, filename="", mode="exec"), itervars, fpath
+    # same working principle as the functio nversion, strip the ast of everything but the loop body.
+    itervars = isolate_loop_ast(tree, lineno=loop_frame_info.lineno)
+    return compile(tree, filename="", mode="exec"), itervars
 
 
 def handle_exception(fpath):
@@ -166,15 +152,20 @@ def handle_exception(fpath):
 
 def _reloading_loop(seq, reload_after=1):
     loop_frame_info = inspect.stack()[2]
+    fpath = loop_frame_info[1]
 
     caller_globals = loop_frame_info.frame.f_globals
     caller_locals = loop_frame_info.frame.f_locals
+    
+    # this creates a uniqe name by adding "0" to the end of the key.
+    # this ensures its always uniqe and unlikey to be used by the user
     unique = unique_name(chain(caller_locals.keys(), caller_globals.keys()))
-    compiled_body, itervars, fpath = get_loop_code(loop_frame_info)  # inital call
+    
+    compiled_body, itervars = get_loop_code(loop_frame_info)  # inital call
     counter = 0
     for j in seq:
         if counter % reload_after == 0:
-            compiled_body, itervars, fpath = get_loop_code(loop_frame_info)
+            compiled_body, itervars = get_loop_code(loop_frame_info)
         counter += 1
         caller_locals[unique] = j
         exec(itervars + " = " + unique, caller_globals, caller_locals)
