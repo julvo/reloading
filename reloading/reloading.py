@@ -5,7 +5,7 @@ import sys
 import ast
 import traceback
 import types
-from itertools import chain
+from itertools import chain, count
 from functools import partial, update_wrapper, wraps
 
 
@@ -127,11 +127,15 @@ def isolate_loop_ast(tree, lineno=None):
     """strip ast from anything but the loop body, also returning the loop vars"""
     for child in ast.walk(tree):
         # i hope this is enough checks
-        if getattr(child, "lineno", None) == lineno and child.iter.func.id == "reloading":
+        if (
+            getattr(child, "lineno", None) == lineno
+            and child.iter.func.id == "reloading"
+        ):
             itervars = tuple_ast_as_name(child.target)
             # replace the original body with the loop body
             tree.body = child.body
             return itervars
+
 
 def get_loop_code(loop_frame_info):
     fpath = loop_frame_info[1]
@@ -154,13 +158,19 @@ def _reloading_loop(seq, reload_after=1):
     loop_frame_info = inspect.stack()[2]
     fpath = loop_frame_info[1]
 
+    # allow passing of True to easily do a endless loop
+    if seq is True:
+        seq = iter(int, 1)  # while True: but as a for loop
+    elif isinstance(seq, int):
+        seq = count(0, seq)  # simply count up
+
     caller_globals = loop_frame_info.frame.f_globals
     caller_locals = loop_frame_info.frame.f_locals
-    
+
     # this creates a uniqe name by adding "0" to the end of the key.
     # this ensures its always uniqe and unlikey to be used by the user
     unique = unique_name(chain(caller_locals.keys(), caller_globals.keys()))
-    
+
     compiled_body, itervars = get_loop_code(loop_frame_info)  # inital call
     counter = 0
     for j in seq:
@@ -187,9 +197,7 @@ def ast_get_decorator_name(dec):
 def ast_filter_decorator(func):
     """Filter out the reloading decorator, inplace."""
     func.decorator_list = [
-        dec
-        for dec in func.decorator_list
-        if ast_get_decorator_name(dec) != "reloading"
+        dec for dec in func.decorator_list if ast_get_decorator_name(dec) != "reloading"
     ]
 
 
@@ -209,7 +217,10 @@ def isolate_func_ast(funcname, tree):
             == 1
         ):
             ast_filter_decorator(child)
-            tree.body = [child] # reassign body, i would create a new ast if i knew how to create ast.Module objects
+            tree.body = [
+                child
+            ]  # reassign body, i would create a new ast if i knew how to create ast.Module objects
+
 
 def get_function_def_code(fpath, fn):
     tree = load_ast_parse(fpath)
@@ -231,7 +242,8 @@ def get_reloaded_function(caller_globals, caller_locals, fpath, fn):
 
 
 def _reloading_function(fn, reload_after=1):
-    frame, fpath = inspect.stack()[2][:2]
+    stack = inspect.stack()
+    frame, fpath = stack[2][:2]
     caller_locals = frame.f_locals
     caller_globals = frame.f_globals
     counter = 0
