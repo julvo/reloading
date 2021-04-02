@@ -12,7 +12,7 @@ from reloading import reloading
 from time import sleep
 
 for epoch in reloading(range(10)):
-    sleep(0.1)
+    sleep(0.2)
     print('INITIAL_FILE_CONTENTS')
 """
 
@@ -25,7 +25,7 @@ def reload_this_fn():
     print('INITIAL_FILE_CONTENTS')
 
 for epoch in reloading(range(10)):
-    sleep(0.1)
+    sleep(0.2)
     reload_this_fn()
 """
 
@@ -54,7 +54,7 @@ from reloading import reloading
 from time import sleep
 
 for epoch in reloading(range(10)):
-    sleep(0.1)
+    sleep(0.2)
     print('INITIAL_FILE_CONTENTS')
 
 # a comment here should not cause an error
@@ -65,18 +65,18 @@ from reloading import reloading
 from time import sleep
 
 for epoch in reloading(range(10)):
-    sleep(0.1)
+    sleep(0.2)
     file_contents = 'FILE_CONTENTS'
     print(f'INITIAL_{file_contents}')
 """
 
-TEST_FUNCTION_RELOAD_AFTER = """
+TEST_FUNCTION_AFTER = """
 from reloading import reloading
 from time import sleep
 
-@reloading(reload_after=2)
+@reloading(every=2)
 def some_func(a, b):
-    sleep(0.1)
+    sleep(0.2)
     print(a+b)
 
 for _ in range(10):
@@ -94,7 +94,7 @@ def run_and_update_source(init_src, updated_src=None, update_after=0.5):
 
     cmd = ["py", "-3.9", SRC_FILE_NAME]
     with sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE) as proc:
-        if updated_src != None:
+        if updated_src is not None:
             time.sleep(update_after)
             with open(SRC_FILE_NAME, "w") as f:
                 f.write(updated_src)
@@ -173,12 +173,10 @@ class TestReloading(unittest.TestCase):
 
     def test_reloading_function(self):
         stdout, _ = run_and_update_source(
-            init_src=TEST_FUNCTION_RELOAD_AFTER,
-            updated_src=TEST_FUNCTION_RELOAD_AFTER.replace("a+b", "a-b"),
+            init_src=TEST_FUNCTION_AFTER,
+            updated_src=TEST_FUNCTION_AFTER.replace("a+b", "a-b"),
         )
-        self.assertTrue(
-            "3" in stdout and "1" in stdout
-        )
+        self.assertTrue("3" in stdout and "1" in stdout)
 
     def test_changing_source_function(self):
         stdout, _ = run_and_update_source(

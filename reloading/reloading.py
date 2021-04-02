@@ -1,12 +1,20 @@
-import time
-import re
 import inspect
 import sys
 import ast
 import traceback
 import types
 from itertools import chain, count
-from functools import partial, update_wrapper, wraps
+from functools import partial as _partial, update_wrapper
+
+
+# have to make our own partial in case someone wants to use reloading as a iterator without any arguments
+# they would get a partial back because a call without a iterator argument is assumed to be a decorator.
+# getting a "TypeError: 'functools.partial' object is not iterable"
+# which is not really descriptive.
+# hence we overwrite the iter to make sure that the error makes sense.
+class partial(_partial):
+    def __iter__(self):
+        raise TypeError("Reloading loop cant be empty.")
 
 
 def reloading(*fn_or_seq, **kwargs):
@@ -18,7 +26,7 @@ def reloading(*fn_or_seq, **kwargs):
     When used as a function decorator, the function is reloaded from source
     before each execution.
 
-    If the reload_after keyword-only argument is passed, the function/loop
+    If the every keyword-only argument is passed, the function/loop
     body wont be reloaded from source, until that many iterations/calls
     have passed. This was added to allow for increased performance
     in fast-running loops.
@@ -27,58 +35,18 @@ def reloading(*fn_or_seq, **kwargs):
         fn_or_seq (function | iterable): A function or loop iterator which should
             be reloaded from source before each execution or iteration,
             respectively
-        reload_after (int, Optional): After how many iterations/calls to reload.
+        every (int, Optional): After how many iterations/calls to reload.
+
     """
-    if len(fn_or_seq) > 0:
+    if len(fn_or_seq) > 0 or kwargs.get("forever"):
         # check if a loop or function was passed, for decorator keyword argument support
-        fn_or_seq = fn_or_seq[0]
+        fn_or_seq = kwargs.get("forever") or fn_or_seq[0]
         if isinstance(fn_or_seq, types.FunctionType):
             return _reloading_function(fn_or_seq, **kwargs)
         return _reloading_loop(fn_or_seq, **kwargs)
-    else:
-        return update_wrapper(partial(reloading, **kwargs), reloading)
-        # return this function with the keyword arguments partialed in,
-        # so that the return value can be used as a decorator
-
-
-def find_loop(tree, lineno=0):
-    for child in ast.walk(tree):
-        if getattr(child, "lineno", 0) < lineno:
-            continue
-        if not isinstance(child, ast.For):
-            continue
-        if not isinstance(child.iter, ast.Call):
-            continue
-        if child.iter.func.id == "reloading":
-            return child
-
-
-def locate_loop_body(module, loop):
-    ends = set(
-        [
-            node.lineno
-            for node in ast.walk(module)
-            if hasattr(node, "lineno") and node.lineno > loop.lineno
-        ]
-    )
-
-    starts = set()
-
-    def visit(node):
-        if hasattr(node, "lineno") and node.lineno > loop.lineno:
-            starts.add(node.lineno)
-            if node.lineno in ends:
-                ends.remove(node.lineno)
-        for child in ast.iter_child_nodes(node):
-            visit(child)
-
-    for stmt in loop.body:
-        visit(stmt)
-
-    if len(ends) == 0:
-        return min(starts), -1
-
-    return min(starts), min(ends)
+    return update_wrapper(partial(reloading, **kwargs), reloading)
+    # return this function with the keyword arguments partialed in,
+    # so that the return value can be used as a decorator
 
 
 def unique_name(used):
@@ -124,7 +92,7 @@ def load_ast_parse(path):
 
 
 def isolate_loop_ast(tree, lineno=None):
-    """strip ast from anything but the loop body, also returning the loop vars"""
+    """Strip ast from anything but the loop body, also returning the loop vars."""
     for child in ast.walk(tree):
         # i hope this is enough checks
         if (
@@ -154,15 +122,15 @@ def handle_exception(fpath):
     sys.stdin.readline()
 
 
-def _reloading_loop(seq, reload_after=1):
+def _reloading_loop(seq, every=1, forever=False):
     loop_frame_info = inspect.stack()[2]
     fpath = loop_frame_info[1]
 
     # allow passing of True to easily do a endless loop
-    if seq is True:
+    if forever is True:
         seq = iter(int, 1)  # while True: but as a for loop
     elif isinstance(seq, int):
-        seq = count(0, seq)  # simply count up
+        seq = count(0, forever)  # simply count up
 
     caller_globals = loop_frame_info.frame.f_globals
     caller_locals = loop_frame_info.frame.f_locals
@@ -174,7 +142,7 @@ def _reloading_loop(seq, reload_after=1):
     compiled_body, itervars = get_loop_code(loop_frame_info)  # inital call
     counter = 0
     for j in seq:
-        if counter % reload_after == 0:
+        if counter % every == 0:
             compiled_body, itervars = get_loop_code(loop_frame_info)
         counter += 1
         caller_locals[unique] = j
@@ -202,7 +170,7 @@ def ast_filter_decorator(func):
 
 
 def isolate_func_ast(funcname, tree):
-    """ This removes everything but the function definition from the ast """
+    """Remove everything but the function definition from the ast."""
     for child in ast.walk(tree):
         if (
             isinstance(child, ast.FunctionDef)
@@ -241,7 +209,7 @@ def get_reloaded_function(caller_globals, caller_locals, fpath, fn):
     return func
 
 
-def _reloading_function(fn, reload_after=1):
+def _reloading_function(fn, every=1):
     stack = inspect.stack()
     frame, fpath = stack[2][:2]
     caller_locals = frame.f_locals
@@ -252,7 +220,7 @@ def _reloading_function(fn, reload_after=1):
     def wrapped(*args, **kwargs):
         nonlocal counter
         nonlocal the_func
-        if counter % reload_after == 0:
+        if counter % every == 0:
             the_func = get_reloaded_function(caller_globals, caller_locals, fpath, fn)
         counter += 1
         while True:
