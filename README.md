@@ -42,23 +42,23 @@ You can also pass the keyword-only attribute `reload_after` to the `reloading` f
 ```python
 from reloading import reloading
 
-@reloading(reload_after=10)
+@reloading(after=10)
 def some_function():
     pass
 
-for i in reloading(range(10), reload_after=10):
+for i in reloading(range(10), after=10):
     pass
 ```
 This will only trigger a reload every n loops, which is more efficient for fast running loops.
 
-For infinite loops there is also a convenient way of creating them provided, as reloading wont work with `while True:` loops. You can either pass `True` to `reloading` to create a infinite for loop which will have the loop variable `0`, or you can pass a integer which is the step size by which to increment the loop variable each loop.
+For infinite loops there is also a convenient way of creating them provided, as reloading wont work with `while True:` loops. You can either pass `forever=True` to `reloading` to create a infinite for loop which will have the loop variable `0`, or you can pass a integer which is the step size by which to increment the loop variable each loop.
 ```python
 from reloading import reloading
 
-for _ in reloading(True, reload_after=10):
+for _ in reloading(after=10, forever=True):
     pass
 
-for i in reloading(2): # 0, 2, 4, 6, 8 etc.
+for i in reloading(forever=2): # 0, 2, 4, 6, 8 etc.
     pass
 ```
 ## Examples
