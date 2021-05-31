@@ -12,7 +12,7 @@ training and, therefore, without losing the training progress.
 
 ## Install
 ```
-pip install reloading
+pip install git+https://github.com/laundmo/reloading.git
 ```
 
 ## Usage
