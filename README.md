@@ -12,7 +12,7 @@ training and, therefore, without losing the training progress.
 
 ## Install
 ```
-pip install reloading
+pip install git+https://github.com/laundmo/reloading.git
 ```
 
 ## Usage
@@ -38,6 +38,29 @@ def some_function():
     pass
 ```
 
+You can also pass the keyword-only attribute `reload_after` to the `reloading` function, like this:
+```python
+from reloading import reloading
+
+@reloading(after=10)
+def some_function():
+    pass
+
+for i in reloading(range(10), after=10):
+    pass
+```
+This will only trigger a reload every n loops, which is more efficient for fast running loops.
+
+For infinite loops there is also a convenient way of creating them provided, as reloading wont work with `while True:` loops. You can either pass `forever=True` to `reloading` to create a infinite for loop which will have the loop variable `0`, or you can pass a integer which is the step size by which to increment the loop variable each loop.
+```python
+from reloading import reloading
+
+for _ in reloading(after=10, forever=True):
+    pass
+
+for i in reloading(forever=2): # 0, 2, 4, 6, 8 etc.
+    pass
+```
 ## Examples
 
 Here are the short snippets of how to use reloading with your favourite library.
