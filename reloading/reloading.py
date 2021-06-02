@@ -39,12 +39,12 @@ def reloading(*fn_or_seq, **kwargs):
             create an endless loop
 
     """
-    if len(fn_or_seq) > 0 or kwargs.get("forever"):
-        # check if a loop or function was passed, for decorator keyword argument support
-        fn_or_seq = kwargs.get("forever") or fn_or_seq[0]
-        if isinstance(fn_or_seq, types.FunctionType):
-            return _reloading_function(fn_or_seq, **kwargs)
-        return _reloading_loop(fn_or_seq, **kwargs)
+    if len(fn_or_seq) > 0:
+        if isinstance(fn_or_seq[0], types.FunctionType):
+            return _reloading_function(fn_or_seq[0], every=kwargs.get("every", 1))
+        return _reloading_loop(fn_or_seq[0], every=kwargs.get("every", 1))
+    if kwargs.get("forever"):
+        return _reloading_loop(iter(int, 1), every=kwargs.get("every", 1))
 
     # return this function with the keyword arguments partialed in,
     # so that the return value can be used as a decorator
@@ -67,7 +67,7 @@ def tuple_ast_as_name(tup):
             names.append(child.id)
         elif isinstance(child, ast.Tuple):
             names.append(
-                f"({tuple_ast_as_name(child)})"
+                "({})".format(tuple_ast_as_name(child))
             )  # if its another tuple, like "a, (b, c)", recurse.
     return ", ".join(names)
 
@@ -113,7 +113,7 @@ def get_loop_code(loop_frame_info):
     # find the loop body in the caller module's source
     tree = load_ast_parse(fpath)
     # same working principle as the functio nversion, strip the ast of everything but the loop body.
-    itervars = isolate_loop_ast(tree, lineno=loop_frame_info.lineno)
+    itervars = isolate_loop_ast(tree, lineno=loop_frame_info[2])
     return compile(tree, filename="", mode="exec"), itervars
 
 
@@ -121,34 +121,26 @@ def handle_exception(fpath):
     exc = traceback.format_exc()
     exc = exc.replace('File "<string>"', 'File "{}"'.format(fpath))
     sys.stderr.write(exc + "\n")
-    print("Edit {} and press return to continue with the next iteration".format(fpath))
+    print("Edit {} and press return to continue".format(fpath))
     sys.stdin.readline()
 
 
-def _reloading_loop(seq, every=1, forever=False):
+def _reloading_loop(seq, every=1):
     loop_frame_info = inspect.stack()[2]
     fpath = loop_frame_info[1]
 
-    # allow passing of True to easily do a endless loop
-    if forever is True:
-        seq = iter(int, 1)  # while True: but as a for loop
-    elif isinstance(seq, int):
-        seq = count(0, forever)  # simply count up
+    caller_globals = loop_frame_info[0].f_globals
+    caller_locals = loop_frame_info[0].f_locals
 
-    caller_globals = loop_frame_info.frame.f_globals
-    caller_locals = loop_frame_info.frame.f_locals
-
-    # this creates a uniqe name by adding "0" to the end of the key.
-    # this ensures its always uniqe and unlikey to be used by the user
+    # create a unique name in the caller namespace that we can safely write 
+    # the values of the iteration variables into
     unique = unique_name(chain(caller_locals.keys(), caller_globals.keys()))
 
-    compiled_body, itervars = get_loop_code(loop_frame_info)  # inital call
-    counter = 0
-    for j in seq:
-        if counter % every == 0:
+    for i, itervar_values in enumerate(seq):
+        if i % every == 0:
             compiled_body, itervars = get_loop_code(loop_frame_info)
-        counter += 1
-        caller_locals[unique] = j
+
+        caller_locals[unique] = itervar_values
         exec(itervars + " = " + unique, caller_globals, caller_locals)
         try:
             # run main loop body
@@ -217,25 +209,27 @@ def _reloading_function(fn, every=1):
     frame, fpath = stack[2][:2]
     caller_locals = frame.f_locals
     caller_globals = frame.f_globals
-    counter = 0
-    the_func = get_reloaded_function(caller_globals, caller_locals, fpath, fn)
+
+    # crutch to use dict as python2 doesn't support nonlocal
+    state = {
+        "func": get_reloaded_function(caller_globals, caller_locals, fpath, fn),
+        "reloads": 1,
+    }
 
     def wrapped(*args, **kwargs):
-        nonlocal counter
-        nonlocal the_func
-        if counter % every == 0:
-            the_func = get_reloaded_function(caller_globals, caller_locals, fpath, fn)
-        counter += 1
+        if state["reloads"] % every == 0:
+            state["func"] = get_reloaded_function(caller_globals, caller_locals, fpath, fn)
+        state["reloads"] += 1
         while True:
             try:
-                a = the_func(*args, **kwargs)
+                result = state["func"](*args, **kwargs)
                 break
             except Exception:
                 handle_exception(fpath)
-                the_func = get_reloaded_function(
+                state["func"] = get_reloaded_function(
                     caller_globals, caller_locals, fpath, fn
                 )
-        return a
+        return result
 
     caller_locals[fn.__name__] = wrapped
     return wrapped

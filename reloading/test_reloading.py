@@ -92,7 +92,7 @@ def run_and_update_source(init_src, updated_src=None, update_after=0.5):
     with open(SRC_FILE_NAME, "w") as f:
         f.write(init_src)
 
-    cmd = ["py", "-3.9", SRC_FILE_NAME]
+    cmd = ["python3", SRC_FILE_NAME]
     with sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE) as proc:
         if updated_src is not None:
             time.sleep(update_after)
