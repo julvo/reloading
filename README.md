@@ -23,7 +23,7 @@ wrap the iterator with `reloading`, e.g.
 from reloading import reloading
 
 for i in reloading(range(10)):
-    # here could be your training loop
+    # this code will be reloaded before each iteration
     print(i)
 
 ```
@@ -35,6 +35,29 @@ from reloading import reloading
 
 @reloading
 def some_function():
+    # this code will be reloaded before each invocation
+    pass
+```
+
+## Additional Options
+
+Pass the keyword argument `every` to reload only on every n-th invocation or iteration. E.g.
+```python
+for i in reloading(range(1000), every=10):
+    # this code will only be reloaded before every 10th iteration
+    # this can help to speed-up tight loops
+    pass
+
+@reloading(every=10)
+def some_function():
+    # this code with only be reloaded before every 10th invocation
+    pass
+```
+
+Pass `forever=True` instead of an iterable to create an endless reloading loop, e.g. 
+```python
+for i in reloading(forever=True):
+    # this code will loop forever and reload from source before each iteration
     pass
 ```
 
