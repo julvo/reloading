@@ -4,7 +4,7 @@ import ast
 import traceback
 import types
 from itertools import chain, count
-from functools import partial as _partial, update_wrapper
+from functools import partial, update_wrapper
 
 
 # have to make our own partial in case someone wants to use reloading as a iterator without any arguments
@@ -12,9 +12,9 @@ from functools import partial as _partial, update_wrapper
 # getting a "TypeError: 'functools.partial' object is not iterable"
 # which is not really descriptive.
 # hence we overwrite the iter to make sure that the error makes sense.
-class partial(_partial):
+class no_iter_partial(partial):
     def __iter__(self):
-        raise TypeError("Reloading loop cant be empty.")
+        raise TypeError("Nothing to iterate over. Please pass an iterable to reloading.")
 
 
 def reloading(*fn_or_seq, **kwargs):
@@ -45,9 +45,11 @@ def reloading(*fn_or_seq, **kwargs):
         if isinstance(fn_or_seq, types.FunctionType):
             return _reloading_function(fn_or_seq, **kwargs)
         return _reloading_loop(fn_or_seq, **kwargs)
-    return update_wrapper(partial(reloading, **kwargs), reloading)
+
     # return this function with the keyword arguments partialed in,
     # so that the return value can be used as a decorator
+    decorator = update_wrapper(no_iter_partial(reloading, **kwargs), reloading)
+    return decorator
 
 
 def unique_name(used):
