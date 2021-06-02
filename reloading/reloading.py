@@ -18,24 +18,25 @@ class partial(_partial):
 
 
 def reloading(*fn_or_seq, **kwargs):
-    """Wraps a loop iterator or decorates a function to reload source code.
+    """Wraps a loop iterator or decorates a function to reload the source code 
+    before every loop iteration or function invocation.
 
-    A function that when wrapped around the outermost iterator in a for loop,
-    causes the loop body to reload from source before every iteration while
-    keeping the state.
-    When used as a function decorator, the function is reloaded from source
-    before each execution.
+    When wrapped around the outermost iterator in a `for` loop, e.g. 
+    `for i in reloading(range(10))`, causes the loop body to reload from source 
+    before every iteration while keeping the state.
+    When used as a function decorator, the decorated function is reloaded from 
+    source before each execution.
 
-    If the every keyword-only argument is passed, the function/loop
-    body wont be reloaded from source, until that many iterations/calls
-    have passed. This was added to allow for increased performance
-    in fast-running loops.
+    Pass the integer keyword-only argument `every` to reload the source code
+    only every n-th iteration/invocation.
 
     Args:
         fn_or_seq (function | iterable): A function or loop iterator which should
-            be reloaded from source before each execution or iteration,
+            be reloaded from source before each invocation or iteration,
             respectively
-        every (int, Optional): After how many iterations/calls to reload.
+        every (int, Optional): After how many iterations/invocations to reload
+        forever (bool, Optional): Pass `forever=true` instead of an iterator to
+            create an endless loop
 
     """
     if len(fn_or_seq) > 0 or kwargs.get("forever"):
