@@ -147,3 +147,10 @@ for epoch in reloading(range(NB_EPOCHS)):
       test_step(test_images, test_labels)
 ```
 [Here](https://github.com/julvo/reloading/blob/master/examples/tensorflow/train.py) is a full TensorFlow example.
+
+## Testing
+
+Make sure you have `python` and `python3` available in your path, then run:
+```
+$ python3 reloading/test_reloading.py
+```
