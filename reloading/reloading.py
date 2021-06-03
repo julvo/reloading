@@ -3,7 +3,7 @@ import sys
 import ast
 import traceback
 import types
-from itertools import chain, count
+from itertools import chain
 from functools import partial, update_wrapper
 
 
@@ -17,7 +17,7 @@ class no_iter_partial(partial):
         raise TypeError("Nothing to iterate over. Please pass an iterable to reloading.")
 
 
-def reloading(*fn_or_seq, **kwargs):
+def reloading(fn_or_seq=None, every=1, forever=None):
     """Wraps a loop iterator or decorates a function to reload the source code 
     before every loop iteration or function invocation.
 
@@ -27,7 +27,7 @@ def reloading(*fn_or_seq, **kwargs):
     When used as a function decorator, the decorated function is reloaded from 
     source before each execution.
 
-    Pass the integer keyword-only argument `every` to reload the source code
+    Pass the integer keyword argument `every` to reload the source code
     only every n-th iteration/invocation.
 
     Args:
@@ -39,16 +39,16 @@ def reloading(*fn_or_seq, **kwargs):
             create an endless loop
 
     """
-    if len(fn_or_seq) > 0:
-        if isinstance(fn_or_seq[0], types.FunctionType):
-            return _reloading_function(fn_or_seq[0], every=kwargs.get("every", 1))
-        return _reloading_loop(fn_or_seq[0], every=kwargs.get("every", 1))
-    if kwargs.get("forever"):
-        return _reloading_loop(iter(int, 1), every=kwargs.get("every", 1))
+    if fn_or_seq:
+        if isinstance(fn_or_seq, types.FunctionType):
+            return _reloading_function(fn_or_seq, every=every)
+        return _reloading_loop(fn_or_seq, every=every)
+    if forever:
+        return _reloading_loop(iter(int, 1), every=every)
 
     # return this function with the keyword arguments partialed in,
     # so that the return value can be used as a decorator
-    decorator = update_wrapper(no_iter_partial(reloading, **kwargs), reloading)
+    decorator = update_wrapper(no_iter_partial(reloading, every=every), reloading)
     return decorator
 
 
