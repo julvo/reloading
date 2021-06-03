@@ -2,6 +2,8 @@ __pycache__
 *.swp
 *.pyc
 dist
+build
 .DS_Store
 examples/FashionMNIST
 .vscode/
+reloading.egg-info

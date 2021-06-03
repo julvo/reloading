@@ -1,15 +1,15 @@
-from distutils.core import setup
+from setuptools import setup
 
 setup(
   name = 'reloading',         
   packages = ['reloading'],   
-  version = '1.0.1',      
+  version = '1.1.0',      
   license='MIT',        
   description = 'Reloads source code of a running program without losing state',
   author = 'Julian Vossen',
   author_email = 'pypi@julianvossen.de',
   url = 'https://github.com/julvo/reloading',
-  download_url = 'https://github.com/julvo/reloading/archive/v1.0.1.tar.gz',
+  download_url = 'https://github.com/julvo/reloading/archive/v1.1.0.tar.gz',
   keywords = ['reload', 'reloading', 'refresh', 'loop', 'decorator'],
   install_requires=[],
   classifiers=[
@@ -23,5 +23,6 @@ setup(
     'Programming Language :: Python :: 3.6',
     'Programming Language :: Python :: 3.7',
     'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.9',
   ],
 )
