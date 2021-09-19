@@ -58,7 +58,7 @@ def unique_name(used):
 
 
 def format_itervars(ast_node):
-    """Formats a an `ast_node` of loop iteration variables as string, e.g. 'a, b'"""
+    """Formats an `ast_node` of loop iteration variables as string, e.g. 'a, b'"""
 
     # handle the case that there only is a single loop var
     if isinstance(ast_node, ast.Name):  
@@ -68,7 +68,7 @@ def format_itervars(ast_node):
     for child in ast_node.elts:
         if isinstance(child, ast.Name):
             names.append(child.id)
-        elif isinstance(child, ast.Tuple):
+        elif isinstance(child, ast.Tuple) or isinstance(child, ast.List):
             # if its another tuple, like "a, (b, c)", recurse
             names.append("({})".format(format_itervars(child)))  
 
@@ -95,20 +95,52 @@ def parse_file_until_successful(path):
             source = load_file(path)
 
 
-def isolate_loop_body_and_get_itervars(tree, lineno):
+def isolate_loop_body_and_get_itervars(tree, lineno, loop_id):
     """Modifies tree inplace as unclear how to create ast.Module.
     Returns itervars"""
+    candidate_nodes = []
     for node in ast.walk(tree):
-        if (getattr(node, "lineno", None) == lineno and node.iter.func.id == "reloading"):
-            tree.body = node.body
-            return node.target
+        if (
+            isinstance(node, ast.For) 
+            and isinstance(node.iter, ast.Call)
+            and node.iter.func.id == "reloading" 
+            and (
+                    (loop_id is not None and loop_id == get_loop_id(node)) 
+                    or getattr(node, "lineno", None) == lineno
+                )
+            ):
+            candidate_nodes.append(node)
+
+    if len(candidate_nodes) > 1:
+        raise LookupError(
+            "The reloading loop is ambigious. Use `reloading` only once per line and make sure that the code in that line is unique within the source file."
+        )
+
+    if len(candidate_nodes) < 1:
+        raise LookupError(
+            "Could not locate reloading loop. Please make sure the code in the line that uses `reloading` doesn't change between reloads."
+        )
+    
+    loop_node = candidate_nodes[0]
+    tree.body = loop_node.body
+    return loop_node.target, get_loop_id(loop_node)
 
 
-def get_loop_code(loop_frame_info):
+def get_loop_id(ast_node):
+    """Generates a unique identifier for an `ast_node` of type ast.For to find the loop in the changed source file
+    """
+    return ast.dump(ast_node.target) + "__" + ast.dump(ast_node.iter)
+
+
+def get_loop_code(loop_frame_info, loop_id):
     fpath = loop_frame_info[1]
-    tree = parse_file_until_successful(fpath)
-    itervars = isolate_loop_body_and_get_itervars(tree, lineno=loop_frame_info[2])
-    return compile(tree, filename="", mode="exec"), format_itervars(itervars)
+    while True:
+        tree = parse_file_until_successful(fpath)
+        try:
+            itervars, found_loop_id = isolate_loop_body_and_get_itervars(tree, lineno=loop_frame_info[2], loop_id=loop_id)
+            return compile(tree, filename="", mode="exec"), format_itervars(itervars), found_loop_id
+        except LookupError:
+            handle_exception(fpath)
 
 
 def handle_exception(fpath):
@@ -129,10 +161,11 @@ def _reloading_loop(seq, every=1):
     # create a unique name in the caller namespace that we can safely write 
     # the values of the iteration variables into
     unique = unique_name(chain(caller_locals.keys(), caller_globals.keys()))
+    loop_id = None
 
     for i, itervar_values in enumerate(seq):
         if i % every == 0:
-            compiled_body, itervars = get_loop_code(loop_frame_info)
+            compiled_body, itervars, loop_id = get_loop_code(loop_frame_info, loop_id=loop_id)
 
         caller_locals[unique] = itervar_values
         exec(itervars + " = " + unique, caller_globals, caller_locals)

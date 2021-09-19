@@ -16,6 +16,17 @@ for epoch in reloading(range(10)):
     print('INITIAL_FILE_CONTENTS')
 """
 
+TEST_CHANGING_LINE_NUMBER_OF_LOOP = """
+from reloading import reloading
+from time import sleep
+
+pass
+
+for epoch in reloading(range(10)):
+    sleep(0.2)
+    print('INITIAL_FILE_CONTENTS')
+"""
+
 TEST_CHANGING_SOURCE_FN_CONTENT = """
 from reloading import reloading
 from time import sleep
@@ -125,6 +136,21 @@ class TestReloading(unittest.TestCase):
             stdout, _ = run_and_update_source(
                 init_src=TEST_CHANGING_SOURCE_LOOP_CONTENT,
                 updated_src=TEST_CHANGING_SOURCE_LOOP_CONTENT.replace("INITIAL", "CHANGED").rstrip("\n"),
+                bin=bin,
+            )
+
+            self.assertTrue("INITIAL_FILE_CONTENTS" in stdout and "CHANGED_FILE_CONTENTS" in stdout)
+
+    def test_changing_line_number_of_loop(self):
+        for bin in ["python", "python3"]:
+            stdout, _ = run_and_update_source(
+                init_src=TEST_CHANGING_LINE_NUMBER_OF_LOOP,
+                updated_src=(
+                    TEST_CHANGING_LINE_NUMBER_OF_LOOP
+                        .replace("pass", "pass\npass\n")
+                        .replace("INITIAL", "CHANGED")
+                        .rstrip("\n")
+                ),
                 bin=bin,
             )
 
