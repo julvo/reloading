@@ -8,7 +8,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 setup(
   name='reloading',         
   packages=['reloading'],   
-  version='1.1.1',      
+  version='1.1.2',      
   license='MIT',        
   description='Reloads source code of a running program without losing state',
   long_description=long_description,
@@ -16,7 +16,7 @@ setup(
   author='Julian Vossen',
   author_email='pypi@julianvossen.de',
   url='https://github.com/julvo/reloading',
-  download_url='https://github.com/julvo/reloading/archive/v1.1.1.tar.gz',
+  download_url='https://github.com/julvo/reloading/archive/v1.1.2.tar.gz',
   keywords=['reload', 'reloading', 'refresh', 'loop', 'decorator'],
   install_requires=[],
   classifiers=[
