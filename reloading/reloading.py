@@ -114,7 +114,7 @@ def isolate_loop_body_and_get_itervars(tree, lineno, loop_id):
             and node.iter.func.id == "reloading"
             and (
                 (loop_id is not None and loop_id == get_loop_id(node))
-                or getattr(node, "lineno", None) == lineno
+                or getattr(node, "lineno", None) == lineno  # this is just a hack.
             )
         ):
             candidate_nodes.append(node)
@@ -146,10 +146,12 @@ def get_loop_code(loop_frame_info, loop_id, prefix="_RELOADING_"):
         tree = parse_file_until_successful(mfpath)
         try:
             itervars, found_loop_id = isolate_loop_body_and_get_itervars(
-                tree, lineno=loop_frame_info[2], loop_id=loop_id
+                tree,
+                lineno=loop_frame_info[2],
+                loop_id=loop_id,  # are you sure this will work?
             )
             return (
-                compile(tree, filename=fpath, mode="exec"),
+                compile(tree, filename=prefix + fpath, mode="exec"),
                 format_itervars(itervars),
                 found_loop_id,
             )
