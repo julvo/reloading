@@ -14,17 +14,19 @@ from functools import partial, update_wrapper
 # hence we overwrite the iter to make sure that the error makes sense.
 class no_iter_partial(partial):
     def __iter__(self):
-        raise TypeError("Nothing to iterate over. Please pass an iterable to reloading.")
+        raise TypeError(
+            "Nothing to iterate over. Please pass an iterable to reloading."
+        )
 
 
 def reloading(fn_or_seq=None, every=1, forever=None):
-    """Wraps a loop iterator or decorates a function to reload the source code 
+    """Wraps a loop iterator or decorates a function to reload the source code
     before every loop iteration or function invocation.
 
-    When wrapped around the outermost iterator in a `for` loop, e.g. 
-    `for i in reloading(range(10))`, causes the loop body to reload from source 
+    When wrapped around the outermost iterator in a `for` loop, e.g.
+    `for i in reloading(range(10))`, causes the loop body to reload from source
     before every iteration while keeping the state.
-    When used as a function decorator, the decorated function is reloaded from 
+    When used as a function decorator, the decorated function is reloaded from
     source before each execution.
 
     Pass the integer keyword argument `every` to reload the source code
@@ -40,8 +42,14 @@ def reloading(fn_or_seq=None, every=1, forever=None):
 
     """
     if fn_or_seq:
-        if isinstance(fn_or_seq, types.FunctionType):
+        fntypes = [types.FunctionType]
+        # type(someclass) -> <class 'type'>
+        # print('TYPE:',type(fn_or_seq))
+        # breakpoint()
+        if any(isinstance(fn_or_seq, fntype) for fntype in fntypes):
             return _reloading_function(fn_or_seq, every=every)
+        elif type(fn_or_seq) == type:
+            return _reloading_class(fn_or_seq, every=every)
         return _reloading_loop(fn_or_seq, every=every)
     if forever:
         return _reloading_loop(iter(int, 1), every=every)
@@ -61,7 +69,7 @@ def format_itervars(ast_node):
     """Formats an `ast_node` of loop iteration variables as string, e.g. 'a, b'"""
 
     # handle the case that there only is a single loop var
-    if isinstance(ast_node, ast.Name):  
+    if isinstance(ast_node, ast.Name):
         return ast_node.id
 
     names = []
@@ -70,7 +78,7 @@ def format_itervars(ast_node):
             names.append(child.id)
         elif isinstance(child, ast.Tuple) or isinstance(child, ast.List):
             # if its another tuple, like "a, (b, c)", recurse
-            names.append("({})".format(format_itervars(child)))  
+            names.append("({})".format(format_itervars(child)))
 
     return ", ".join(names)
 
@@ -78,7 +86,7 @@ def format_itervars(ast_node):
 def load_file(path):
     src = ""
     # while loop here since while saving, the file may sometimes be empty.
-    while (src == ""):  
+    while src == "":
         with open(path, "r") as f:
             src = f.read()
     return src + "\n"
@@ -101,14 +109,14 @@ def isolate_loop_body_and_get_itervars(tree, lineno, loop_id):
     candidate_nodes = []
     for node in ast.walk(tree):
         if (
-            isinstance(node, ast.For) 
+            isinstance(node, ast.For)
             and isinstance(node.iter, ast.Call)
-            and node.iter.func.id == "reloading" 
+            and node.iter.func.id == "reloading"
             and (
-                    (loop_id is not None and loop_id == get_loop_id(node)) 
-                    or getattr(node, "lineno", None) == lineno
-                )
-            ):
+                (loop_id is not None and loop_id == get_loop_id(node))
+                or getattr(node, "lineno", None) == lineno
+            )
+        ):
             candidate_nodes.append(node)
 
     if len(candidate_nodes) > 1:
@@ -120,15 +128,14 @@ def isolate_loop_body_and_get_itervars(tree, lineno, loop_id):
         raise LookupError(
             "Could not locate reloading loop. Please make sure the code in the line that uses `reloading` doesn't change between reloads."
         )
-    
+
     loop_node = candidate_nodes[0]
     tree.body = loop_node.body
     return loop_node.target, get_loop_id(loop_node)
 
 
 def get_loop_id(ast_node):
-    """Generates a unique identifier for an `ast_node` of type ast.For to find the loop in the changed source file
-    """
+    """Generates a unique identifier for an `ast_node` of type ast.For to find the loop in the changed source file"""
     return ast.dump(ast_node.target) + "__" + ast.dump(ast_node.iter)
 
 
@@ -137,8 +144,14 @@ def get_loop_code(loop_frame_info, loop_id):
     while True:
         tree = parse_file_until_successful(fpath)
         try:
-            itervars, found_loop_id = isolate_loop_body_and_get_itervars(tree, lineno=loop_frame_info[2], loop_id=loop_id)
-            return compile(tree, filename="", mode="exec"), format_itervars(itervars), found_loop_id
+            itervars, found_loop_id = isolate_loop_body_and_get_itervars(
+                tree, lineno=loop_frame_info[2], loop_id=loop_id
+            )
+            return (
+                compile(tree, filename="", mode="exec"),
+                format_itervars(itervars),
+                found_loop_id,
+            )
         except LookupError:
             handle_exception(fpath)
 
@@ -147,8 +160,16 @@ def handle_exception(fpath):
     exc = traceback.format_exc()
     exc = exc.replace('File "<string>"', 'File "{}"'.format(fpath))
     sys.stderr.write(exc + "\n")
-    print("Edit {} and press return to continue".format(fpath))
-    sys.stdin.readline()
+    print("Edit {} and press return to continue, 'c' for continue, 'e' for exception.".format(fpath))
+    # sys.stdin.readline()
+    signal = input()
+    signal_lower = signal.lower()
+    if signal_lower == 'c':
+        return True
+    elif signal_lower == 'e':
+        raise Exception('Raise exception for file: "{}"'.format(fpath))
+    else:
+        return False
 
 
 def _reloading_loop(seq, every=1):
@@ -158,14 +179,16 @@ def _reloading_loop(seq, every=1):
     caller_globals = loop_frame_info[0].f_globals
     caller_locals = loop_frame_info[0].f_locals
 
-    # create a unique name in the caller namespace that we can safely write 
+    # create a unique name in the caller namespace that we can safely write
     # the values of the iteration variables into
     unique = unique_name(chain(caller_locals.keys(), caller_globals.keys()))
     loop_id = None
 
     for i, itervar_values in enumerate(seq):
         if i % every == 0:
-            compiled_body, itervars, loop_id = get_loop_code(loop_frame_info, loop_id=loop_id)
+            compiled_body, itervars, loop_id = get_loop_code(
+                loop_frame_info, loop_id=loop_id
+            )
 
         caller_locals[unique] = itervar_values
         exec(itervars + " = " + unique, caller_globals, caller_locals)
@@ -191,35 +214,44 @@ def strip_reloading_decorator(func):
     ]
 
 
-def isolate_function_def(funcname, tree):
+def isolate_function_def(
+    funcname, tree, funcdefs=[ast.FunctionDef, ast.AsyncFunctionDef]
+):
     """Strip everything but the function definition from the ast in-place.
     Also strips the reloading decorator from the function definition"""
     for node in ast.walk(tree):
         if (
-            isinstance(node, ast.FunctionDef)
+            any(isinstance(node, funcdef) for funcdef in funcdefs)
             and node.name == funcname
-            and "reloading" in [
-                get_decorator_name(dec)
-                for dec in node.decorator_list
-            ]
+            and "reloading" in [get_decorator_name(dec) for dec in node.decorator_list]
         ):
             strip_reloading_decorator(node)
-            tree.body = [ node ]  
+            tree.body = [node]
             return True
     return False
 
 
-def get_function_def_code(fpath, fn):
+def get_function_def_code(fpath, fn, funcdefs=[ast.FunctionDef, ast.AsyncFunctionDef]):
     tree = parse_file_until_successful(fpath)
-    found = isolate_function_def(fn.__name__, tree)
+    found = isolate_function_def(fn.__name__, tree, funcdefs=funcdefs)
     if not found:
         return None
-    compiled = compile(tree, filename="", mode="exec")
+    # print('tree fetched:',tree) # ast.Module object.
+    compiled = compile(
+        tree, filename=fpath, mode="exec"
+    )  # filename is the same as the original name?
+    # compiled = compile(tree, filename="", mode="exec") # filename is the same as the original name?
     return compiled
 
 
-def get_reloaded_function(caller_globals, caller_locals, fpath, fn):
-    code = get_function_def_code(fpath, fn)
+def get_reloaded_function(
+    caller_globals,
+    caller_locals,
+    fpath,
+    fn,
+    funcdefs=[ast.FunctionDef, ast.AsyncFunctionDef],
+):
+    code = get_function_def_code(fpath, fn, funcdefs=funcdefs)
     if code is None:
         return None
     # need to copy locals, otherwise the exec will overwrite the decorated with the undecorated new version
@@ -230,11 +262,74 @@ def get_reloaded_function(caller_globals, caller_locals, fpath, fn):
     return func
 
 
-def _reloading_function(fn, every=1):
+def _reloading_class(fn, every=1):
     stack = inspect.stack()
+    # print("stack", stack)
+    # breakpoint()
     frame, fpath = stack[2][:2]
     caller_locals = frame.f_locals
     caller_globals = frame.f_globals
+    state = {
+        "class": None,
+        "reloads": -1,
+    }
+    # return mclass
+
+    def wrapped():
+        state["reloads"] += 1
+        while True:
+            try:
+                if state["reloads"] % every == 0:
+                    state["class"] = (
+                        get_reloaded_function(
+                            caller_globals,
+                            caller_locals,
+                            fpath,
+                            fn,
+                            funcdefs=[ast.ClassDef],
+                        )
+                        or state["class"]
+                    )
+                class_ = state["class"]
+                # the function inside function (closure) is not handled properly. need to decorate again?
+                # do not decorate already decorated function?
+                return class_
+            except Exception:
+                while True:
+                    needbreak = handle_exception(fpath)
+                    if needbreak: break
+                    try:
+                        state["class"] = (
+                            get_reloaded_function(
+                                caller_globals,
+                                caller_locals,
+                                fpath,
+                                fn,
+                                funcdefs=[ast.ClassDef],
+                            )
+                            or state["class"]
+                        )
+                        return state['class']
+                    except:
+                        pass
+    class_ = wrapped()
+    caller_locals[fn.__name__] = class_
+    return class_
+
+
+def _reloading_function(fn, every=1):
+    stack = inspect.stack()
+    # what is this stack?
+    # print(stack)
+    # breakpoint()
+    # stack[0] -> this _reloading_function
+    # stack[1] -> reloading function
+    # stack[2] -> original function
+    # FrameInfo(frame=<frame at 0x7f4a6346a5e0, file '/media/root/parrot/pyjom/tests/skipexception_code_and_continue_resurrection_time_travel_debugging/hook_error_handler_to_see_if_context_preserved.py', line 67, code <module>>, filename='/media/root/parrot/pyjom/tests/skipexception_code_and_continue_resurrection_time_travel_debugging/hook_error_handler_to_see_if_context_preserved.py', lineno=67, function='<module>', code_context=['def anotherFunction():\n'], index=0)
+    frame, fpath = stack[2][:2]
+    caller_locals = frame.f_locals
+    caller_globals = frame.f_globals
+    # 'clear', 'f_back', 'f_builtins', 'f_code', 'f_globals', 'f_lasti', 'f_lineno', 'f_locals', 'f_trace', 'f_trace_lines', 'f_trace_opcodes'
 
     # crutch to use dict as python2 doesn't support nonlocal
     state = {
@@ -244,15 +339,28 @@ def _reloading_function(fn, every=1):
 
     def wrapped(*args, **kwargs):
         if state["reloads"] % every == 0:
-            state["func"] = get_reloaded_function(caller_globals, caller_locals, fpath, fn) or state["func"]
+            state["func"] = (
+                get_reloaded_function(caller_globals, caller_locals, fpath, fn)
+                or state["func"]
+            )
         state["reloads"] += 1
         while True:
             try:
-                result = state["func"](*args, **kwargs)
+                func = state["func"]
+                print(
+                    f"----\nargs:{args}\nkwargs:{kwargs}\nfunc:{func}\n----"
+                )  # try to debug.
+                # the function inside function (closure) is not handled properly. need to decorate again?
+                # do not decorate already decorated function?
+                result = func(*args, **kwargs)
                 return result
             except Exception:
-                handle_exception(fpath)
-                state["func"] = get_reloaded_function(caller_globals, caller_locals, fpath, fn) or state["func"]
+                needbreak = handle_exception(fpath)
+                if needbreak: break
+                state["func"] = (
+                    get_reloaded_function(caller_globals, caller_locals, fpath, fn)
+                    or state["func"]
+                )
 
     caller_locals[fn.__name__] = wrapped
     return wrapped
