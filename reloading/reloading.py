@@ -139,16 +139,17 @@ def get_loop_id(ast_node):
     return ast.dump(ast_node.target) + "__" + ast.dump(ast_node.iter)
 
 
-def get_loop_code(loop_frame_info, loop_id):
+def get_loop_code(loop_frame_info, loop_id, prefix="_RELOADING_"):
     fpath = loop_frame_info[1]
+    mfpath = removePrefix(fpath, prefix=prefix)
     while True:
-        tree = parse_file_until_successful(fpath)
+        tree = parse_file_until_successful(mfpath)
         try:
             itervars, found_loop_id = isolate_loop_body_and_get_itervars(
                 tree, lineno=loop_frame_info[2], loop_id=loop_id
             )
             return (
-                compile(tree, filename="", mode="exec"),
+                compile(tree, filename=fpath, mode="exec"),
                 format_itervars(itervars),
                 found_loop_id,
             )
@@ -156,17 +157,23 @@ def get_loop_code(loop_frame_info, loop_id):
             handle_exception(fpath)
 
 
-def handle_exception(fpath):
+def handle_exception(fpath, prefix="_RELOADING_"):
+    depth = fpath.count(prefix)
+    mfpath = removePrefix(fpath)
     exc = traceback.format_exc()
-    exc = exc.replace('File "<string>"', 'File "{}"'.format(fpath))
-    sys.stderr.write(exc + "\n")
-    print("Edit {} and press return to continue, 'c' for continue, 'e' for exception.".format(fpath))
+    exc = exc.replace('File "<string>"', 'File "{}"'.format(mfpath))
+    sys.stderr.write(f"Reloading Depth {depth}\n{exc}\n")
+    hint = "Edit {} and press return to continue"
+    allow_exception = depth != 0
+    if allow_exception:
+        hint += ", 'e' for exception"
+        # hint += ", 'k' for skip, 'e' for exception"
+    hint += "."
+    print(hint.format(mfpath))
     # sys.stdin.readline()
     signal = input()
     signal_lower = signal.lower()
-    if signal_lower == 'c':
-        return True
-    elif signal_lower == 'e':
+    if signal_lower == "e" and allow_exception:
         raise Exception('Raise exception for file: "{}"'.format(fpath))
     else:
         return False
@@ -231,14 +238,26 @@ def isolate_function_def(
     return False
 
 
-def get_function_def_code(fpath, fn, funcdefs=[ast.FunctionDef, ast.AsyncFunctionDef]):
-    tree = parse_file_until_successful(fpath)
+def removePrefix(fpath, prefix="_RELOADING_"):
+    mfpath = fpath
+    while True:
+        if mfpath.startswith(prefix):
+            mfpath = mfpath[len(prefix) :]
+        else:
+            return mfpath
+
+
+def get_function_def_code(
+    fpath, fn, funcdefs=[ast.FunctionDef, ast.AsyncFunctionDef], prefix="_RELOADING_"
+):
+    mfpath = removePrefix(fpath, prefix=prefix)
+    tree = parse_file_until_successful(mfpath)
     found = isolate_function_def(fn.__name__, tree, funcdefs=funcdefs)
     if not found:
         return None
     # print('tree fetched:',tree) # ast.Module object.
     compiled = compile(
-        tree, filename=fpath, mode="exec"
+        tree, filename=prefix + fpath, mode="exec"
     )  # filename is the same as the original name?
     # compiled = compile(tree, filename="", mode="exec") # filename is the same as the original name?
     return compiled
@@ -297,7 +316,8 @@ def _reloading_class(fn, every=1):
             except Exception:
                 while True:
                     needbreak = handle_exception(fpath)
-                    if needbreak: break
+                    if needbreak:
+                        break
                     try:
                         state["class"] = (
                             get_reloaded_function(
@@ -309,9 +329,10 @@ def _reloading_class(fn, every=1):
                             )
                             or state["class"]
                         )
-                        return state['class']
+                        return state["class"]
                     except:
                         pass
+
     class_ = wrapped()
     caller_locals[fn.__name__] = class_
     return class_
@@ -356,7 +377,8 @@ def _reloading_function(fn, every=1):
                 return result
             except Exception:
                 needbreak = handle_exception(fpath)
-                if needbreak: break
+                if needbreak:
+                    break
                 state["func"] = (
                     get_reloaded_function(caller_globals, caller_locals, fpath, fn)
                     or state["func"]
