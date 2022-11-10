@@ -19,6 +19,9 @@ class no_iter_partial(partial):
         )
 
 
+from collections import Iterable
+
+
 def reloading(fn_or_seq=None, every=1, forever=None):
     """Wraps a loop iterator or decorates a function to reload the source code
     before every loop iteration or function invocation.
@@ -44,13 +47,19 @@ def reloading(fn_or_seq=None, every=1, forever=None):
     if fn_or_seq:
         fntypes = [types.FunctionType]
         # type(someclass) -> <class 'type'>
-        # print('TYPE:',type(fn_or_seq))
-        # breakpoint()
-        if any(isinstance(fn_or_seq, fntype) for fntype in fntypes):
-            return _reloading_function(fn_or_seq, every=every)
-        elif type(fn_or_seq) == type:
-            return _reloading_class(fn_or_seq, every=every)
-        return _reloading_loop(fn_or_seq, every=every)
+        try:
+            if any(isinstance(fn_or_seq, fntype) for fntype in fntypes):
+                return _reloading_function(fn_or_seq, every=every)
+            elif isinstance(fn_or_seq, Iterable):
+                return _reloading_loop(fn_or_seq, every=every)
+            else:
+                return _reloading_class(fn_or_seq, every=every)
+        except:
+            import traceback
+
+            traceback.print_exc()
+            print("UNKNOWN TYPE:", type(fn_or_seq))
+            breakpoint()
     if forever:
         return _reloading_loop(iter(int, 1), every=every)
 
@@ -170,13 +179,13 @@ def handle_exception(fpath, prefix="_RELOADING_"):
     allow_exception = True
     if allow_exception:
         # hint += ", 'e' for exception"
-        hint += ", 'k' for skip, 'e' for exception"
+        hint += ", 'k' for skip, 'e' for exception"  # skip is to return None for the current function. maybe it will cause more problems.
     hint += "."
     print(hint.format(mfpath))
     # sys.stdin.readline()
     signal = input()
     signal_lower = signal.lower()
-    if signal_lower == 'k' and allow_exception:
+    if signal_lower == "k" and allow_exception:
         return True
     elif signal_lower == "e" and allow_exception:
         raise Exception('Raise exception for file: "{}"'.format(fpath))
@@ -286,7 +295,13 @@ def get_reloaded_function(
     return func
 
 
-def _reloading_class(fn, every=1):  # disable the 'every' argument.
+_reloading_class_dict = {}
+
+
+def _reloading_class(
+    fn, every=1, reloadOnException=True
+):  # disable the 'every' argument.
+    global _reloading_class_dict
     every = 1  # override this thing. reload at every time.
     stack = inspect.stack()
     # print("stack", stack)
@@ -296,17 +311,32 @@ def _reloading_class(fn, every=1):  # disable the 'every' argument.
     caller_globals = frame.f_globals
 
     # return mclass
-    state = {  # this is not going to preserve the state.
-        "class": None,
-        "reloads": -1,
-    }
+    _reloading_class_dict[fpath] = _reloading_class_dict.get(fpath, {})
+    _reloading_class_dict[fpath][fn] = _reloading_class_dict.get(fpath).get(
+        fn,
+        {  # this is not going to preserve the state.
+            "class": None,
+            "reloads": -1,
+        },
+    )
+    # state = _reloading_class_dict[fpath][fn]
 
     def wrapped():
-        state["reloads"] += 1
         while True:
             try:
-                if state["reloads"] % every == 0:
-                    state["class"] = (
+                if reloadOnException:  # should you start a server or something?
+                    if _reloading_class_dict[fpath][fn]["class"] is None:
+                        _reloading_class_dict[fpath][fn][
+                            "class"
+                        ] = get_reloaded_function(
+                            caller_globals,
+                            caller_locals,
+                            fpath,
+                            fn,
+                            funcdefs=[ast.ClassDef],
+                        )
+                elif _reloading_class_dict[fpath][fn]["reloads"] % every == 0:
+                    _reloading_class_dict[fpath][fn]["class"] = (
                         get_reloaded_function(
                             caller_globals,
                             caller_locals,
@@ -314,9 +344,11 @@ def _reloading_class(fn, every=1):  # disable the 'every' argument.
                             fn,
                             funcdefs=[ast.ClassDef],
                         )
-                        or state["class"]
+                        or _reloading_class_dict[fpath][fn]["class"]
                     )
-                class_ = state["class"]
+                    _reloading_class_dict[fpath][fn]["reloads"] += 1
+
+                class_ = _reloading_class_dict[fpath][fn]["class"]
                 # the function inside function (closure) is not handled properly. need to decorate again?
                 # do not decorate already decorated function?
                 return class_
@@ -326,7 +358,7 @@ def _reloading_class(fn, every=1):  # disable the 'every' argument.
                     if needbreak:
                         break
                     try:
-                        state["class"] = (
+                        _reloading_class_dict[fpath][fn]["class"] = (
                             get_reloaded_function(
                                 caller_globals,
                                 caller_locals,
@@ -334,9 +366,9 @@ def _reloading_class(fn, every=1):  # disable the 'every' argument.
                                 fn,
                                 funcdefs=[ast.ClassDef],
                             )
-                            or state["class"]
+                            or _reloading_class_dict[fpath][fn]["class"]
                         )
-                        return state["class"]
+                        return _reloading_class_dict[fpath][fn]["class"]
                     except:
                         pass
 
@@ -345,7 +377,7 @@ def _reloading_class(fn, every=1):  # disable the 'every' argument.
     return class_
 
 
-def _reloading_function(fn, every=1):
+def _reloading_function(fn, every=1, reloadOnException=True):
     stack = inspect.stack()
     # what is this stack?
     # print(stack)
@@ -366,18 +398,23 @@ def _reloading_function(fn, every=1):
     }
 
     def wrapped(*args, **kwargs):
-        if state["reloads"] % every == 0:
+        if reloadOnException:
+            if state["func"] is None:
+                state["func"] = get_reloaded_function(
+                    caller_globals, caller_locals, fpath, fn
+                )
+        elif state["reloads"] % every == 0:
             state["func"] = (
                 get_reloaded_function(caller_globals, caller_locals, fpath, fn)
                 or state["func"]
             )
-        state["reloads"] += 1
+            state["reloads"] += 1
         while True:
             try:
                 func = state["func"]
-                print(
-                    f"----\nargs:{args}\nkwargs:{kwargs}\nfunc:{func}\n----"
-                )  # try to debug.
+                # print(
+                #     f"----\nargs:{args}\nkwargs:{kwargs}\nfunc:{func}\n----"
+                # )  # try to debug.
                 # the function inside function (closure) is not handled properly. need to decorate again?
                 # do not decorate already decorated function?
                 result = func(*args, **kwargs)
