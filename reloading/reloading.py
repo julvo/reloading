@@ -166,16 +166,19 @@ def handle_exception(fpath, prefix="_RELOADING_"):
     exc = exc.replace('File "<string>"', 'File "{}"'.format(mfpath))
     sys.stderr.write(f"Reloading Depth {depth}\n{exc}\n")
     hint = "Edit {} and press return to continue"
-    allow_exception = depth != 0
+    # allow_exception = depth != 0
+    allow_exception = True
     if allow_exception:
-        hint += ", 'e' for exception"
-        # hint += ", 'k' for skip, 'e' for exception"
+        # hint += ", 'e' for exception"
+        hint += ", 'k' for skip, 'e' for exception"
     hint += "."
     print(hint.format(mfpath))
     # sys.stdin.readline()
     signal = input()
     signal_lower = signal.lower()
-    if signal_lower == "e" and allow_exception:
+    if signal_lower == 'k' and allow_exception:
+        return True
+    elif signal_lower == "e" and allow_exception:
         raise Exception('Raise exception for file: "{}"'.format(fpath))
     else:
         return False
