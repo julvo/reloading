@@ -281,18 +281,20 @@ def get_reloaded_function(
     return func
 
 
-def _reloading_class(fn, every=1):
+def _reloading_class(fn, every=1):  # disable the 'every' argument.
+    every = 1  # override this thing. reload at every time.
     stack = inspect.stack()
     # print("stack", stack)
     # breakpoint()
     frame, fpath = stack[2][:2]
     caller_locals = frame.f_locals
     caller_globals = frame.f_globals
-    state = {
+
+    # return mclass
+    state = {  # this is not going to preserve the state.
         "class": None,
         "reloads": -1,
     }
-    # return mclass
 
     def wrapped():
         state["reloads"] += 1
