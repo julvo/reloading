@@ -235,20 +235,43 @@ def strip_reloading_decorator(func):
     ]
 
 
-def isolate_function_def(
-    funcname, tree, funcdefs=[ast.FunctionDef, ast.AsyncFunctionDef]
+def isolate_function_def( # careful! we need to sort the definition.
+    funcname, tree, codeInfos,funcdefs=[ast.FunctionDef, ast.AsyncFunctionDef]
 ):
+    # if codeInfos is None, then we do not sort. we just return.
     """Strip everything but the function definition from the ast in-place.
     Also strips the reloading decorator from the function definition"""
+    import copy
+    nodeList = []
     for node in ast.walk(tree):
         if (
             any(isinstance(node, funcdef) for funcdef in funcdefs)
             and node.name == funcname
             and "reloading" in [get_decorator_name(dec) for dec in node.decorator_list]
         ):
-            strip_reloading_decorator(node)
-            tree.body = [node]
-            return True
+        # please sort it in some way.
+        # ['__class__', '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', '_attributes', '_fields', 'args', 'body', 'col_offset', 'decorator_list', 'end_col_offset', 'end_lineno', 'lineno', 'name', 'returns', 'type_comment']
+            # print("NODE?",node)
+            # breakpoint()
+            if codeInfos is None:
+                strip_reloading_decorator(node)
+                tree.body = [node]
+                return True
+            else:
+                lineno = node.lineno
+                # sort it out please!
+                addrDistance = abs(codeInfos["lineNumber"] - lineno)
+                nodeList.append(
+                    (addrDistance,
+                    copy.copy(node)) # append what? copy what? sort what?
+                )
+    nodeList.sort(key=lambda x: x[0])
+    if codeInfos is not None and nodeList != []:
+        # return nodeList[0][1]
+        node = nodeList[0][1]
+        strip_reloading_decorator(node)
+        tree.body = [node]
+        return True
     return False
 
 
@@ -266,7 +289,22 @@ def get_function_def_code(
 ):
     mfpath = removePrefix(fpath, prefix=prefix)
     tree = parse_file_until_successful(mfpath)
-    found = isolate_function_def(fn.__name__, tree, funcdefs=funcdefs)
+    ## locate the freaking function definition!
+    # print(dir(fn))
+    funcString = str(fn.__code__)
+    # <code object testfunc at 0x102876f50, file "reload_py_template.py", line 3>
+    # what is the damn location of this code object?
+    import parse
+    # codeFormat = '<code object {} at 0x{}, file "{}", line {}>'
+    # codeFormat = '<code object {funcName:s} at 0x{}, file "{fileName:s}", line {lineNumber:d}>'
+    # codeFormat = '<code object {funcName:s} at 0x{codeAddress:x}, file "{fileName:s}", line {lineNumber:d}>'
+    codeFormat = '<code object {funcName} at 0x{codeAddress}, file "{fileName}", line {lineNumber:d}>'
+    codeInfos = parse.parse(codeFormat, funcString)
+    # <Result () {'funcName': 'testfunc', 'codeAddress': '105152f50', 'fileName': 'reload_py_template.py', 'lineNumber': 3}>
+    # print(codeInfos) # None?
+    # print([funcString])
+    # breakpoint()
+    found = isolate_function_def(fn.__name__, tree, codeInfos,funcdefs=funcdefs)
     if not found:
         return None
     # print('tree fetched:',tree) # ast.Module object.
@@ -386,6 +424,14 @@ def _reloading_function(fn, every=1, reloadOnException=True):
     # stack[1] -> reloading function
     # stack[2] -> original function
     # FrameInfo(frame=<frame at 0x7f4a6346a5e0, file '/media/root/parrot/pyjom/tests/skipexception_code_and_continue_resurrection_time_travel_debugging/hook_error_handler_to_see_if_context_preserved.py', line 67, code <module>>, filename='/media/root/parrot/pyjom/tests/skipexception_code_and_continue_resurrection_time_travel_debugging/hook_error_handler_to_see_if_context_preserved.py', lineno=67, function='<module>', code_context=['def anotherFunction():\n'], index=0)
+    # what the fuck is this stack[2]? let's see.
+    ##########################
+    # seems this is the damn function... yeah...
+    # FrameInfo(frame=<frame at 0x100dfe440, file 'reload_py_template.py', line 4, code <module>>, filename='reload_py_template.py', lineno=4, function='<module>', code_context=['def testfunc():\n'], index=0)
+    # mstack = stack[2]
+    # print(mstack)
+    # breakpoint()
+    ##########################
     frame, fpath = stack[2][:2]
     caller_locals = frame.f_locals
     caller_globals = frame.f_globals
