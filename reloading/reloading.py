@@ -7,6 +7,62 @@ from itertools import chain
 from functools import partial, update_wrapper
 
 
+def getCodeInfoFromCodeObject(maybeCodeObject):
+    mdict = dir(maybeCodeObject)
+    if "__code__" in mdict:
+        mycode = maybeCodeObject.__code__
+    else:
+        mycode = maybeCodeObject
+    # print("MYCODE?",mycode) # it is function, not code object. fucking shit.
+    # breakpoint()
+
+    # funcString = str(fn.__code__)
+    funcString = str(mycode)
+    # <code object testfunc at 0x102876f50, file "reload_py_template.py", line 3>
+    # what is the damn location of this code object?
+    import parse
+    # codeFormat = '<code object {} at 0x{}, file "{}", line {}>'
+    # codeFormat = '<code object {funcName:s} at 0x{}, file "{fileName:s}", line {lineNumber:d}>'
+    # codeFormat = '<code object {funcName:s} at 0x{codeAddress:x}, file "{fileName:s}", line {lineNumber:d}>'
+    codeFormat = '<code object {funcName} at 0x{codeAddress}, file "{fileName}", line {lineNumber:d}>'
+    codeInfos = parse.parse(codeFormat, funcString)
+    return codeInfos
+
+def getMyIndexFromStackForFn(stack, fn, codeInfos):
+    msortedIndexs = []
+    # print("CODEINFOS?", codeInfos) # it is really None. fucking shit.
+    for mindex in range(0, min(len(stack), 10)):
+        score = 0
+        mstack = stack[mindex]
+        code_context = " ".join(mstack.code_context) # this is list.
+        # print("NAME?",fn.__name__)
+        # print("CONTEXT?",code_context) # this is a list!
+        if fn.__name__ not in code_context:
+            score+=5000 # this is the main signal. fuck.
+        lineno = mstack.lineno
+        if codeInfos is not None:
+            mlineno = codeInfos['lineNumber']
+            mlineDistance = abs(mlineno-lineno)
+            score+=mlineDistance
+        filename = mstack.filename
+        if codeInfos is not None:
+            # remove prefixes?
+            import os
+            fname_0 = removePrefix(os.path.split(filename)[-1]) 
+            fname_1 = removePrefix(os.path.split(codeInfos['fileName'])[-1])
+            # print("FNAME_0?", fname_0)
+            # print("FNAME_1?", fname_1)
+            if fname_0!=fname_1:
+                score+=50000
+        msortedIndexs.append((mindex, score))
+
+    msortedIndexs.sort(key=lambda x: x[1])
+    # print("SORTED INDEXS?")
+    # print(msortedIndexs)
+
+    myindex = msortedIndexs[0][0]
+    return myindex
+
 # have to make our own partial in case someone wants to use reloading as a iterator without any arguments
 # they would get a partial back because a call without a iterator argument is assumed to be a decorator.
 # getting a "TypeError: 'functools.partial' object is not iterable"
@@ -291,15 +347,8 @@ def get_function_def_code(
     tree = parse_file_until_successful(mfpath)
     ## locate the freaking function definition!
     # print(dir(fn))
-    funcString = str(fn.__code__)
-    # <code object testfunc at 0x102876f50, file "reload_py_template.py", line 3>
-    # what is the damn location of this code object?
-    import parse
-    # codeFormat = '<code object {} at 0x{}, file "{}", line {}>'
-    # codeFormat = '<code object {funcName:s} at 0x{}, file "{fileName:s}", line {lineNumber:d}>'
-    # codeFormat = '<code object {funcName:s} at 0x{codeAddress:x}, file "{fileName:s}", line {lineNumber:d}>'
-    codeFormat = '<code object {funcName} at 0x{codeAddress}, file "{fileName}", line {lineNumber:d}>'
-    codeInfos = parse.parse(codeFormat, funcString)
+    # TODO: parse line number and code metadata from stringified code object
+    codeInfos = getCodeInfoFromCodeObject(fn)
     # <Result () {'funcName': 'testfunc', 'codeAddress': '105152f50', 'fileName': 'reload_py_template.py', 'lineNumber': 3}>
     # print(codeInfos) # None?
     # print([funcString])
@@ -344,7 +393,13 @@ def _reloading_class(
     stack = inspect.stack()
     # print("stack", stack)
     # breakpoint()
-    frame, fpath = stack[2][:2]
+
+    codeInfos = getCodeInfoFromCodeObject(fn)
+
+    myindex = getMyIndexFromStackForFn(stack, fn, codeInfos)
+    frame, fpath = stack[myindex][:2]
+    # frame, fpath = stack[2][:2] # what exactly is the damn stack?
+    # reload class? wtf?
     caller_locals = frame.f_locals
     caller_globals = frame.f_globals
 
@@ -415,7 +470,7 @@ def _reloading_class(
     return class_
 
 
-def _reloading_function(fn, every=1, reloadOnException=True):
+def _reloading_function(fn, every=1, reloadOnException=True, ):
     stack = inspect.stack()
     # what is this stack?
     # print(stack)
@@ -432,7 +487,31 @@ def _reloading_function(fn, every=1, reloadOnException=True):
     # print(mstack)
     # breakpoint()
     ##########################
-    frame, fpath = stack[2][:2]
+    # the freaking index
+    codeInfos = getCodeInfoFromCodeObject(fn)
+
+    myindex = getMyIndexFromStackForFn(stack, fn, codeInfos)
+    # print('INDEX?', myindex) # why the fucking index is zero?
+
+    ## TODO: get this fucking index.
+
+    frame, fpath = stack[myindex][:2] # myindex is usually 2.
+
+    # if containing shit, please do something about it.
+    # if code_context does not contain the function name, add fucking score.
+    # select closest stack frame.
+    # if do not contain given file name, add more fucking score.
+    # sort things out, with relevancy first, index order later.
+
+    # FRAME? <frame at 0x10243e440, file 'reload_py_template.py', line 4, code <module>>
+    # you may want to use this frame.
+    # method for finding this frame at spot?
+    print("____")
+    # FrameInfo(frame=<frame at 0x10243e440, file 'reload_py_template.py', line 4, code <module>>, filename='reload_py_template.py', lineno=4, function='<module>', code_context=['def testfunc():\n'], index=0)
+    # ['__add__', '__class__', '__contains__', '__delattr__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__getitem__', '__getnewargs__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__iter__', '__le__', '__len__', '__lt__', '__module__', '__mul__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__rmul__', '__setattr__', '__sizeof__', '__slots__', '__str__', '__subclasshook__', '_asdict', '_field_defaults', '_fields', '_fields_defaults', '_make', '_replace', 'code_context', 'count', 'filename', 'frame', 'function', 'index', 'lineno']
+    # print("FRAME?", frame)
+    # print("FPATH?", fpath)
+    # breakpoint()
     caller_locals = frame.f_locals
     caller_globals = frame.f_globals
     # 'clear', 'f_back', 'f_builtins', 'f_code', 'f_globals', 'f_lasti', 'f_lineno', 'f_locals', 'f_trace', 'f_trace_lines', 'f_trace_opcodes'
@@ -463,7 +542,7 @@ def _reloading_function(fn, every=1, reloadOnException=True):
                 # )  # try to debug.
                 # the function inside function (closure) is not handled properly. need to decorate again?
                 # do not decorate already decorated function?
-                result = func(*args, **kwargs)
+                result = func(*args, **kwargs) # NONE? WTF?
                 return result
             except Exception:
                 needbreak = handle_exception(fpath)
