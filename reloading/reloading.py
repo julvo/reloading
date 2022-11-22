@@ -21,6 +21,7 @@ def getCodeInfoFromCodeObject(maybeCodeObject):
     # <code object testfunc at 0x102876f50, file "reload_py_template.py", line 3>
     # what is the damn location of this code object?
     import parse
+
     # codeFormat = '<code object {} at 0x{}, file "{}", line {}>'
     # codeFormat = '<code object {funcName:s} at 0x{}, file "{fileName:s}", line {lineNumber:d}>'
     # codeFormat = '<code object {funcName:s} at 0x{codeAddress:x}, file "{fileName:s}", line {lineNumber:d}>'
@@ -28,32 +29,34 @@ def getCodeInfoFromCodeObject(maybeCodeObject):
     codeInfos = parse.parse(codeFormat, funcString)
     return codeInfos
 
+
 def getMyIndexFromStackForFn(stack, fn, codeInfos):
     msortedIndexs = []
     # print("CODEINFOS?", codeInfos) # it is really None. fucking shit.
     for mindex in range(0, min(len(stack), 10)):
         score = 0
         mstack = stack[mindex]
-        code_context = " ".join(mstack.code_context) # this is list.
+        code_context = " ".join(mstack.code_context)  # this is list.
         # print("NAME?",fn.__name__)
         # print("CONTEXT?",code_context) # this is a list!
         if fn.__name__ not in code_context:
-            score+=5000 # this is the main signal. fuck.
+            score += 5000  # this is the main signal. fuck.
         lineno = mstack.lineno
         if codeInfos is not None:
-            mlineno = codeInfos['lineNumber']
-            mlineDistance = abs(mlineno-lineno)
-            score+=mlineDistance
+            mlineno = codeInfos["lineNumber"]
+            mlineDistance = abs(mlineno - lineno)
+            score += mlineDistance
         filename = mstack.filename
         if codeInfos is not None:
             # remove prefixes?
             import os
-            fname_0 = removePrefix(os.path.split(filename)[-1]) 
-            fname_1 = removePrefix(os.path.split(codeInfos['fileName'])[-1])
+
+            fname_0 = removePrefix(os.path.split(filename)[-1])
+            fname_1 = removePrefix(os.path.split(codeInfos["fileName"])[-1])
             # print("FNAME_0?", fname_0)
             # print("FNAME_1?", fname_1)
-            if fname_0!=fname_1:
-                score+=50000
+            if fname_0 != fname_1:
+                score += 50000
         msortedIndexs.append((mindex, score))
 
     msortedIndexs.sort(key=lambda x: x[1])
@@ -62,6 +65,7 @@ def getMyIndexFromStackForFn(stack, fn, codeInfos):
 
     myindex = msortedIndexs[0][0]
     return myindex
+
 
 # have to make our own partial in case someone wants to use reloading as a iterator without any arguments
 # they would get a partial back because a call without a iterator argument is assumed to be a decorator.
@@ -114,7 +118,7 @@ def reloading(fn_or_seq=None, every=1, forever=None):
             import traceback
 
             traceback.print_exc()
-            print("UNKNOWN TYPE:", type(fn_or_seq))
+            print("UNKNOWN TYPE:", type(fn_or_seq))  # wtf is this?
             breakpoint()
     if forever:
         return _reloading_loop(iter(int, 1), every=every)
@@ -157,11 +161,40 @@ def load_file(path):
     return src + "\n"
 
 
-def parse_file_until_successful(path):
+def parse_file_until_successful(path, module_name = "__main__"): # what is this fucking file?
     source = load_file(path)
     while True:
         try:
-            tree = ast.parse(source)
+            # treat shit differently. please!
+            if path.endswith(".hy"): # but we want the fucking module name?
+                # do different things!
+                # use module_name to do the shit.
+                import io
+                mstream = io.StringIO(source)
+                from hy.reader import HyReader
+                mgen = HyReader().parse(mstream, path)
+                # please do something to do the fucking config.
+                from hy.config import config
+                import hy.models
+                # default?
+                # 'toplevel':True,'line-by-line':True,'disable-showstack':False
+                hst = hy.models.Lazy( # how to use this fucking shit?
+                    gen=mgen,
+                    stream=mstream,
+                    filename=path,
+                    temaps={} if config['line-by-line'] else None,
+                    protect_toplevel=True if config['toplevel'] else False,
+                    disable_showstack=True if config['disable-showstack'] else False, # these configs can be retrieved from hy.config.
+                )
+                hst.source = source
+                hst.filename = path
+                from hy.compiler import hy_compile
+
+                tree = hy_compile(
+                    hst, module_name, filename=path, source=source # man you need to get the fucking module name.
+                )# does this fucking works?
+            else:
+                tree = ast.parse(source)
             return tree
         except SyntaxError:
             handle_exception(path)
@@ -176,39 +209,44 @@ def isolate_loop_body_and_get_itervars(tree, lineno, loop_id):
         if (
             isinstance(node, ast.For)
             and isinstance(node.iter, ast.Call)
-            and node.iter.func.id == "reloading"
+            and node.iter.func.id == "reloading" # what the fuck is this shit?
             and (
                 (loop_id is not None and loop_id == get_loop_id(node))
                 or getattr(node, "lineno", None) == lineno  # this is just a hack.
             )
         ):
-            candidate_nodes.append(node)
-
-    if len(candidate_nodes) > 1:
-        raise LookupError(
-            "The reloading loop is ambigious. Use `reloading` only once per line and make sure that the code in that line is unique within the source file."
-        )
-
+            dis = abs(getattr(node, "lineno", 0) - lineno)
+            candidate_nodes.append((node, dis))
+    
+    # please sort by the fucking line no.
+    # if len(candidate_nodes) > 1:
+    #     raise LookupError(
+    #         "The reloading loop is ambigious. Use `reloading` only once per line and make sure that the code in that line is unique within the source file."
+    #     )
     if len(candidate_nodes) < 1:
         raise LookupError(
             "Could not locate reloading loop. Please make sure the code in the line that uses `reloading` doesn't change between reloads."
         )
+    candidate_nodes.sort(key=lambda x: x[1]) # shall you fucking know the damn name? or some 
 
-    loop_node = candidate_nodes[0]
+    loop_node, _ = candidate_nodes[0]
+    # loop_node = candidate_nodes[0]
     tree.body = loop_node.body
     return loop_node.target, get_loop_id(loop_node)
 
 
-def get_loop_id(ast_node):
+def get_loop_id(ast_node): # wtf is that shit?
     """Generates a unique identifier for an `ast_node` of type ast.For to find the loop in the changed source file"""
     return ast.dump(ast_node.target) + "__" + ast.dump(ast_node.iter)
 
 
 def get_loop_code(loop_frame_info, loop_id, prefix="_RELOADING_"):
-    fpath = loop_frame_info[1]
+    fpath = loop_frame_info[1] # what the fuck is this frame loop?
+    # what is the fucking module name?
+    module_name = "__main__" # just fuck it!
     mfpath = removePrefix(fpath, prefix=prefix)
     while True:
-        tree = parse_file_until_successful(mfpath)
+        tree = parse_file_until_successful(mfpath, module_name=module_name)
         try:
             itervars, found_loop_id = isolate_loop_body_and_get_itervars(
                 tree,
@@ -250,7 +288,7 @@ def handle_exception(fpath, prefix="_RELOADING_"):
 
 
 def _reloading_loop(seq, every=1):
-    loop_frame_info = inspect.stack()[2]
+    loop_frame_info = inspect.stack()[2] # man fucking careful about this shit! why this stack is fucked?
     fpath = loop_frame_info[1]
 
     caller_globals = loop_frame_info[0].f_globals
@@ -291,13 +329,14 @@ def strip_reloading_decorator(func):
     ]
 
 
-def isolate_function_def( # careful! we need to sort the definition.
-    funcname, tree, codeInfos,funcdefs=[ast.FunctionDef, ast.AsyncFunctionDef]
+def isolate_function_def(  # careful! we need to sort the definition.
+    funcname, tree, codeInfos, funcdefs=[ast.FunctionDef, ast.AsyncFunctionDef]
 ):
     # if codeInfos is None, then we do not sort. we just return.
     """Strip everything but the function definition from the ast in-place.
     Also strips the reloading decorator from the function definition"""
     import copy
+
     nodeList = []
     for node in ast.walk(tree):
         if (
@@ -305,8 +344,8 @@ def isolate_function_def( # careful! we need to sort the definition.
             and node.name == funcname
             and "reloading" in [get_decorator_name(dec) for dec in node.decorator_list]
         ):
-        # please sort it in some way.
-        # ['__class__', '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', '_attributes', '_fields', 'args', 'body', 'col_offset', 'decorator_list', 'end_col_offset', 'end_lineno', 'lineno', 'name', 'returns', 'type_comment']
+            # please sort it in some way.
+            # ['__class__', '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', '_attributes', '_fields', 'args', 'body', 'col_offset', 'decorator_list', 'end_col_offset', 'end_lineno', 'lineno', 'name', 'returns', 'type_comment']
             # print("NODE?",node)
             # breakpoint()
             if codeInfos is None:
@@ -318,8 +357,10 @@ def isolate_function_def( # careful! we need to sort the definition.
                 # sort it out please!
                 addrDistance = abs(codeInfos["lineNumber"] - lineno)
                 nodeList.append(
-                    (addrDistance,
-                    copy.copy(node)) # append what? copy what? sort what?
+                    (
+                        addrDistance,
+                        copy.copy(node),
+                    )  # append what? copy what? sort what?
                 )
     nodeList.sort(key=lambda x: x[0])
     if codeInfos is not None and nodeList != []:
@@ -340,11 +381,12 @@ def removePrefix(fpath, prefix="_RELOADING_"):
             return mfpath
 
 
-def get_function_def_code(
+def get_function_def_code( # please! use this against your fucking hy code!
     fpath, fn, funcdefs=[ast.FunctionDef, ast.AsyncFunctionDef], prefix="_RELOADING_"
 ):
-    mfpath = removePrefix(fpath, prefix=prefix)
-    tree = parse_file_until_successful(mfpath)
+    mfpath = removePrefix(fpath, prefix=prefix) # please consider hy code!
+    module_name = getattr(fn,"__module__", "__main__")
+    tree = parse_file_until_successful(mfpath, module_name=module_name)
     ## locate the freaking function definition!
     # print(dir(fn))
     # TODO: parse line number and code metadata from stringified code object
@@ -353,7 +395,7 @@ def get_function_def_code(
     # print(codeInfos) # None?
     # print([funcString])
     # breakpoint()
-    found = isolate_function_def(fn.__name__, tree, codeInfos,funcdefs=funcdefs)
+    found = isolate_function_def(fn.__name__, tree, codeInfos, funcdefs=funcdefs)
     if not found:
         return None
     # print('tree fetched:',tree) # ast.Module object.
@@ -397,7 +439,8 @@ def _reloading_class(
     codeInfos = getCodeInfoFromCodeObject(fn)
 
     myindex = getMyIndexFromStackForFn(stack, fn, codeInfos)
-    frame, fpath = stack[myindex][:2]
+    mstack = stack[myindex]
+    frame, fpath = mstack[:2]
     # frame, fpath = stack[2][:2] # what exactly is the damn stack?
     # reload class? wtf?
     caller_locals = frame.f_locals
@@ -470,7 +513,11 @@ def _reloading_class(
     return class_
 
 
-def _reloading_function(fn, every=1, reloadOnException=True, ):
+def _reloading_function(
+    fn,
+    every=1,
+    reloadOnException=True,
+):
     stack = inspect.stack()
     # what is this stack?
     # print(stack)
@@ -490,12 +537,15 @@ def _reloading_function(fn, every=1, reloadOnException=True, ):
     # the freaking index
     codeInfos = getCodeInfoFromCodeObject(fn)
 
-    myindex = getMyIndexFromStackForFn(stack, fn, codeInfos)
+    myindex = getMyIndexFromStackForFn(stack, fn, codeInfos) # why i cannot obtain the fucking __module__ name? wtf?
     # print('INDEX?', myindex) # why the fucking index is zero?
 
     ## TODO: get this fucking index.
+    mstack = stack[myindex]
+    # print('MSTACK?', mstack)
+    # breakpoint()
 
-    frame, fpath = stack[myindex][:2] # myindex is usually 2.
+    frame, fpath = mstack[:2]  # myindex is usually 2.
 
     # if containing shit, please do something about it.
     # if code_context does not contain the function name, add fucking score.
@@ -542,7 +592,7 @@ def _reloading_function(fn, every=1, reloadOnException=True, ):
                 # )  # try to debug.
                 # the function inside function (closure) is not handled properly. need to decorate again?
                 # do not decorate already decorated function?
-                result = func(*args, **kwargs) # NONE? WTF?
+                result = func(*args, **kwargs)  # NONE? WTF?
                 return result
             except Exception:
                 needbreak = handle_exception(fpath)
