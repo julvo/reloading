@@ -78,8 +78,10 @@ class no_iter_partial(partial):
             "Nothing to iterate over. Please pass an iterable to reloading."
         )
 
-
-from collections import Iterable
+try:
+    from collections import Iterable
+except:
+    from collections.abc import Iterable
 
 
 def reloading(fn_or_seq=None, every=1, forever=None):
