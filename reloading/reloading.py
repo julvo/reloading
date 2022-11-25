@@ -519,6 +519,7 @@ def _reloading_function(
     fn,
     every=1,
     reloadOnException=True,
+    debug=False
 ):
     stack = inspect.stack()
     # what is this stack?
@@ -558,7 +559,9 @@ def _reloading_function(
     # FRAME? <frame at 0x10243e440, file 'reload_py_template.py', line 4, code <module>>
     # you may want to use this frame.
     # method for finding this frame at spot?
-    print("____")
+    # wtf is this shit?
+    if debug:
+        print("____")
     # FrameInfo(frame=<frame at 0x10243e440, file 'reload_py_template.py', line 4, code <module>>, filename='reload_py_template.py', lineno=4, function='<module>', code_context=['def testfunc():\n'], index=0)
     # ['__add__', '__class__', '__contains__', '__delattr__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__getitem__', '__getnewargs__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__iter__', '__le__', '__len__', '__lt__', '__module__', '__mul__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__rmul__', '__setattr__', '__sizeof__', '__slots__', '__str__', '__subclasshook__', '_asdict', '_field_defaults', '_fields', '_fields_defaults', '_make', '_replace', 'code_context', 'count', 'filename', 'frame', 'function', 'index', 'lineno']
     # print("FRAME?", frame)
