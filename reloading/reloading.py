@@ -190,10 +190,10 @@ def get_decorator_name_or_none(dec_node):
 
 
 def strip_reloading_decorator(func):
-    """Remove the reloading decorator in-place"""
-    func.decorator_list = [
-        dec for dec in func.decorator_list if get_decorator_name_or_none(dec) != "reloading"
-    ]
+    """Remove the 'reloading' decorator and all decorators before it"""
+    decorator_names = [get_decorator_name(dec) for dec in func.decorator_list]
+    reloading_idx = decorator_names.index("reloading")
+    func.decorator_list = func.decorator_list[reloading_idx + 1:]
 
 
 def isolate_function_def(funcname, tree):
