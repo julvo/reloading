@@ -178,16 +178,21 @@ def _reloading_loop(seq, every=1):
     return []
 
 
-def get_decorator_name(dec_node):
+def get_decorator_name_or_none(dec_node):
     if hasattr(dec_node, "id"):
         return dec_node.id
-    return dec_node.func.id
+    elif hasattr(dec_node.func, "id"):
+        return dec_node.func.id
+    elif hasattr(dec_node.func.value, "id"):
+        return dec_node.func.value.id
+    else:
+        return None
 
 
 def strip_reloading_decorator(func):
     """Remove the reloading decorator in-place"""
     func.decorator_list = [
-        dec for dec in func.decorator_list if get_decorator_name(dec) != "reloading"
+        dec for dec in func.decorator_list if get_decorator_name_or_none(dec) != "reloading"
     ]
 
 
@@ -199,7 +204,7 @@ def isolate_function_def(funcname, tree):
             isinstance(node, ast.FunctionDef)
             and node.name == funcname
             and "reloading" in [
-                get_decorator_name(dec)
+                get_decorator_name_or_none(dec)
                 for dec in node.decorator_list
             ]
         ):
