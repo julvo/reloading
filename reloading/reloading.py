@@ -18,13 +18,13 @@ class no_iter_partial(partial):
 
 
 def reloading(fn_or_seq=None, every=1, forever=None):
-    """Wraps a loop iterator or decorates a function to reload the source code 
+    """Wraps a loop iterator or decorates a function to reload the source code
     before every loop iteration or function invocation.
 
-    When wrapped around the outermost iterator in a `for` loop, e.g. 
-    `for i in reloading(range(10))`, causes the loop body to reload from source 
+    When wrapped around the outermost iterator in a `for` loop, e.g.
+    `for i in reloading(range(10))`, causes the loop body to reload from source
     before every iteration while keeping the state.
-    When used as a function decorator, the decorated function is reloaded from 
+    When used as a function decorator, the decorated function is reloaded from
     source before each execution.
 
     Pass the integer keyword argument `every` to reload the source code
@@ -61,7 +61,7 @@ def format_itervars(ast_node):
     """Formats an `ast_node` of loop iteration variables as string, e.g. 'a, b'"""
 
     # handle the case that there only is a single loop var
-    if isinstance(ast_node, ast.Name):  
+    if isinstance(ast_node, ast.Name):
         return ast_node.id
 
     names = []
@@ -70,7 +70,7 @@ def format_itervars(ast_node):
             names.append(child.id)
         elif isinstance(child, ast.Tuple) or isinstance(child, ast.List):
             # if its another tuple, like "a, (b, c)", recurse
-            names.append("({})".format(format_itervars(child)))  
+            names.append("({})".format(format_itervars(child)))
 
     return ", ".join(names)
 
@@ -78,7 +78,7 @@ def format_itervars(ast_node):
 def load_file(path):
     src = ""
     # while loop here since while saving, the file may sometimes be empty.
-    while (src == ""):  
+    while (src == ""):
         with open(path, "r") as f:
             src = f.read()
     return src + "\n"
@@ -101,11 +101,11 @@ def isolate_loop_body_and_get_itervars(tree, lineno, loop_id):
     candidate_nodes = []
     for node in ast.walk(tree):
         if (
-            isinstance(node, ast.For) 
+            isinstance(node, ast.For)
             and isinstance(node.iter, ast.Call)
-            and node.iter.func.id == "reloading" 
+            and node.iter.func.id == "reloading"
             and (
-                    (loop_id is not None and loop_id == get_loop_id(node)) 
+                    (loop_id is not None and loop_id == get_loop_id(node))
                     or getattr(node, "lineno", None) == lineno
                 )
             ):
@@ -120,7 +120,7 @@ def isolate_loop_body_and_get_itervars(tree, lineno, loop_id):
         raise LookupError(
             "Could not locate reloading loop. Please make sure the code in the line that uses `reloading` doesn't change between reloads."
         )
-    
+
     loop_node = candidate_nodes[0]
     tree.body = loop_node.body
     return loop_node.target, get_loop_id(loop_node)
@@ -158,7 +158,7 @@ def _reloading_loop(seq, every=1):
     caller_globals = loop_frame_info[0].f_globals
     caller_locals = loop_frame_info[0].f_locals
 
-    # create a unique name in the caller namespace that we can safely write 
+    # create a unique name in the caller namespace that we can safely write
     # the values of the iteration variables into
     unique = unique_name(chain(caller_locals.keys(), caller_globals.keys()))
     loop_id = None
@@ -204,7 +204,7 @@ def isolate_function_def(funcname, tree):
             ]
         ):
             strip_reloading_decorator(node)
-            tree.body = [ node ]  
+            tree.body = [ node ]
             return True
     return False
 
